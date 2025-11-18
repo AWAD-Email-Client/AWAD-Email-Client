@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 
-// Generate hash for "password123"
-const password = "password123";
+// Generate hash for "demo123"
+const password = "demo123";
 const salt = bcrypt.genSaltSync(10);
 const hash = bcrypt.hashSync(password, salt);
 

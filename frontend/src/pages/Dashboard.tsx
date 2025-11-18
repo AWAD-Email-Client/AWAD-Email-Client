@@ -20,9 +20,10 @@ const Dashboard: React.FC = () => {
     const fetchMailboxes = async () => {
       try {
         const response = await apiClient.get("/mailboxes");
-        setMailboxes(response.data);
+        const mailboxesData = response.data.data || response.data;
+        setMailboxes(mailboxesData);
         // Select Inbox by default
-        const inbox = response.data.find((mb: Mailbox) => mb.name === "Inbox");
+        const inbox = mailboxesData.find((mb: Mailbox) => mb.name === "Inbox");
         if (inbox) {
           setSelectedMailbox(inbox);
         }
@@ -46,7 +47,8 @@ const Dashboard: React.FC = () => {
         const response = await apiClient.get(
           `/mailboxes/${selectedMailbox.id}/emails`
         );
-        setEmails(response.data);
+        const emailsData = response.data.data || response.data;
+        setEmails(emailsData);
         // Clear selected email when switching mailboxes
         setSelectedEmail(null);
       } catch (error) {
@@ -67,7 +69,8 @@ const Dashboard: React.FC = () => {
     try {
       // Fetch full email details
       const response = await apiClient.get(`/emails/${email.id}`);
-      setSelectedEmail(response.data);
+      const emailData = response.data.data || response.data;
+      setSelectedEmail(emailData);
 
       // Mark as read if unread
       if (!email.isRead) {
