@@ -16,15 +16,15 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route
-              path="/dashboard"
+              path="/inbox"
               element={
                 <ProtectedRoute>
                   <Dashboard />
                 </ProtectedRoute>
               }
             />
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/" element={<Navigate to="/inbox" replace />} />
+            <Route path="*" element={<Navigate to="/inbox" replace />} />
           </Routes>
         </AuthProvider>
       </BrowserRouter>

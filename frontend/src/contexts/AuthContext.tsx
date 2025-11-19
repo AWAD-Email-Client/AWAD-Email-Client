@@ -73,7 +73,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setRefreshToken(refreshToken);
       setUser(userData);
 
-      navigate("/dashboard");
+      navigate("/inbox");
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message || "Login failed. Please try again."
@@ -90,7 +90,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setRefreshToken(refreshToken);
       setUser(userData);
 
-      navigate("/dashboard");
+      navigate("/inbox");
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message ||

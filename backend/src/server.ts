@@ -61,19 +61,14 @@ app.use((err: Error, req: Request, res: Response, next: any) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`
-╔═══════════════════════════════════════════════════════╗
-║                                                       ║
-║   📧  Email Dashboard API Server                     ║
-║                                                       ║
-║   🚀  Server running on port ${PORT}                    ║
-║   🌐  API: http://localhost:${PORT}                    ║
-║   ❤️   Health: http://localhost:${PORT}/health         ║
-║                                                       ║
-║   Environment: ${
+
+    📧  Email Dashboard API Server
+    🚀  Server running on port ${PORT}                    
+    🌐  API: http://localhost:${PORT}                    
+    ❤️   Health: http://localhost:${PORT}/health
+    Environment: ${
     process.env.NODE_ENV || "development"
-  }                          ║
-║                                                       ║
-╚═══════════════════════════════════════════════════════╝
+  }                          
   `);
 });
 
