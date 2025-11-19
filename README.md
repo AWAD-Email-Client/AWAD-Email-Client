@@ -300,21 +300,21 @@ const emails = await apiClient.get("/mailboxes/inbox-1/emails");
 
 ```
 ┌────────────────────────────────────────────────────┐
-│  Header: Logo, User Info, Sign Out                │
+│  Header: Logo, User Info, Sign Out                 │
 ├───────────┬────────────────────┬───────────────────┤
 │           │                    │                   │
 │ Mailboxes │    Email List      │   Email Detail    │
 │  (~20%)   │     (~40%)         │      (~40%)       │
 │           │                    │                   │
-│ • Inbox   │ ┌────────────────┐ │ Subject          │
-│ • Starred │ │ Search         │ │ From: ...        │
-│ • Sent    │ │ [    ][Refresh]│ │ To: ...          │
-│ • Drafts  │ └────────────────┘ │                  │
-│ • Archive │                    │ Email Body...    │
-│ • Trash   │ ☐ ⭐ From         │                  │
-│           │    Subject...      │ Attachments      │
-│   [3]     │    Preview...      │ [Reply] [Delete] │
-│           │    2h ago          │                  │
+│ • Inbox   │ ┌────────────────┐ │ Subject           │
+│ • Starred │ │ Search         │ │ From: ...         │
+│ • Sent    │ │ [    ][Refresh]│ │ To: ...           │
+│ • Drafts  │ └────────────────┘ │                   │
+│ • Archive │                    │ Email Body...     │
+│ • Trash   │ ☐ ⭐ From         │                   │
+│           │    Subject...      │ Attachments       │
+│   [3]     │    Preview...      │ [Reply] [Delete]  │
+│           │    2h ago          │                   │
 └───────────┴────────────────────┴───────────────────┘
 ```
 
@@ -382,7 +382,63 @@ const emails = await apiClient.get("/mailboxes/inbox-1/emails");
 
 ## 🚀 Deployment
 
-### Backend Deployment (Render / Railway)
+### Public URLs
+- **Frontend**: https://awad-react-authentication.vercel.app
+- **Backend**: https://awad-react-authentication.onrender.com
+
+### Reproducing Deployment Locally
+
+#### Backend (Render)
+```bash
+# Clone and setup
+git clone <your-repo-url>
+cd backend
+
+# Install dependencies
+npm install
+
+# Build for production
+npm run build
+
+# Start production server
+npm start
+```
+
+#### Frontend (Vercel)
+```bash
+cd frontend
+
+# Install dependencies
+npm install
+
+# Build for production
+npm run build
+
+# Preview locally
+npm run preview
+```
+
+### Environment Variables for Local Deployment
+
+**Backend (.env):**
+```env
+PORT=5000
+JWT_SECRET=your_production_jwt_secret_here
+JWT_REFRESH_SECRET=your_production_refresh_secret_here
+ACCESS_TOKEN_EXPIRY=15m
+REFRESH_TOKEN_EXPIRY=7d
+GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
+NODE_ENV=production
+FRONTEND_URL=https://awad-react-authentication.vercel.app
+```
+
+**Frontend (.env):**
+```env
+VITE_API_URL=https://awad-react-authentication.onrender.com/api
+VITE_GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
+```
+
+### Backend Deployment (Render)
 
 1. **Create new web service**
 2. **Connect repository**
@@ -402,7 +458,7 @@ const emails = await apiClient.get("/mailboxes/inbox-1/emails");
    FRONTEND_URL=<your-frontend-url>
    ```
 
-### Frontend Deployment (Vercel / Netlify)
+### Frontend Deployment (Vercel)
 
 1. **Create new project**
 2. **Connect repository**
@@ -429,6 +485,83 @@ npm run build
 # - Tree shaking
 # - Minification
 ```
+
+## 🔐 Security Considerations
+
+### Token Storage Choices
+
+#### Access Token: In-Memory Storage
+**Why?**
+- **Security**: Prevents XSS attacks from accessing sensitive tokens
+- **OAuth 2.0 Best Practice**: Access tokens should not be stored in localStorage/sessionStorage
+- **Short Lifetime**: 15-minute expiry minimizes exposure window
+
+**Implementation:**
+```typescript
+// In axios.ts - stored in module-level variable
+let accessToken: string | null = null;
+
+export const setAccessToken = (token: string | null) => {
+  accessToken = token;
+};
+```
+
+#### Refresh Token: localStorage
+**Why?**
+- **Persistence**: Survives page refreshes and browser restarts
+- **Convenience**: Automatic re-authentication without user interaction
+- **Trade-off**: Vulnerable to XSS attacks
+
+**Production Recommendation:**
+- **HttpOnly Cookies**: Move refresh tokens to server-side cookies
+- **SameSite Protection**: Prevent CSRF attacks
+- **Secure Flag**: HTTPS-only transmission
+
+**HttpOnly Cookie Implementation:**
+```typescript
+// Backend: Set HttpOnly cookie
+res.cookie('refreshToken', refreshToken, {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'strict',
+  maxAge: 7 * 24 * 60 * 60 * 1000
+});
+
+// Frontend: Automatic cookie sending
+const response = await axios.post('/auth/refresh', {}, {
+  withCredentials: true
+});
+```
+
+### Third-Party Services
+
+#### Google OAuth 2.0
+- **Service**: Google Identity Platform
+- **Purpose**: Secure user authentication via Google accounts
+- **Configuration**:
+  - Client ID: `your_google_client_id.apps.googleusercontent.com`
+  - Authorized Origins: `https://awad-react-authentication.vercel.app`
+  - Authorized Redirect URIs: `https://awad-react-authentication.vercel.app`
+- **Security**: Uses Google's secure OAuth flow with JWT verification
+
+#### Hosting Providers
+- **Frontend**: Vercel (Static site hosting with CDN)
+- **Backend**: Render (Cloud application hosting)
+- **Benefits**:
+  - Automatic HTTPS
+  - Global CDN
+  - Auto-scaling
+  - Environment variable management
+  - Build optimization
+
+### Security Best Practices Implemented
+
+- ✅ **CORS Protection**: Configured for specific origins
+- ✅ **JWT Expiration**: Short-lived access tokens
+- ✅ **Password Hashing**: bcrypt with salt rounds
+- ✅ **Input Validation**: Client and server-side validation
+- ✅ **Error Handling**: No sensitive data in error responses
+- ✅ **HTTPS Only**: All production traffic encrypted
 
 ## 🎯 Stretch Goals Implementation
 
