@@ -13,6 +13,8 @@ import {
   JwtPayload,
 } from "../types";
 import usersData from "../data/users.json";
+import gmailService from "../services/gmail";
+import tokenStore from "../services/tokenStore";
 
 const router = express.Router();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -103,7 +105,118 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// POST /api/auth/google - Google OAuth Login
+// GET /api/auth/google/url - Get Google OAuth URL (OAuth2 Authorization Code Flow)
+router.get("/google/url", (req: Request, res: Response): void => {
+  try {
+    const authUrl = gmailService.getAuthUrl();
+
+    res.json({
+      success: true,
+      url: authUrl,
+    });
+  } catch (error) {
+    console.error("Error generating OAuth URL:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to generate OAuth URL",
+    });
+  }
+});
+
+// GET /api/auth/google/callback - Handle Google OAuth callback (OAuth2 Authorization Code Flow)
+router.get(
+  "/google/callback",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { code, error } = req.query;
+
+      // Handle OAuth error
+      if (error) {
+        res.redirect(`${process.env.FRONTEND_URL}/login?error=${error}`);
+        return;
+      }
+
+      if (!code || typeof code !== "string") {
+        res.redirect(`${process.env.FRONTEND_URL}/login?error=no_code`);
+        return;
+      }
+
+      // Exchange code for tokens
+      const tokens = await gmailService.getTokensFromCode(code);
+
+      if (!tokens.refresh_token || !tokens.access_token) {
+        res.redirect(
+          `${process.env.FRONTEND_URL}/login?error=no_refresh_token`
+        );
+        return;
+      }
+
+      // Get user's email from OAuth2 userinfo endpoint
+      // Use axios directly with Bearer token instead of oauth2Client.request()
+      // to avoid credential attachment issues
+      const axios = await import("axios");
+      const userInfoResponse = await axios.default.get(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        {
+          headers: {
+            Authorization: `Bearer ${tokens.access_token}`,
+          },
+        }
+      );
+
+      const email = userInfoResponse.data.email;
+
+      console.log("Google OAuth user email:", email);
+      console.log("Google OAuth tokens:", tokens);
+      console.log("Google OAuth user info:", userInfoResponse.data);
+      if (!email) {
+        res.redirect(`${process.env.FRONTEND_URL}/login?error=no_email`);
+        return;
+      }
+
+      // Find or create user
+      const users = usersData as User[];
+      let user = users.find((u) => u.email === email);
+
+      if (!user) {
+        // Create new user
+        user = {
+          id: "user-" + Date.now(),
+          email,
+          password: "", // No password for Google users
+          name: email.split("@")[0],
+          googleId: email, // Using email as googleId for now
+          createdAt: new Date().toISOString(),
+        };
+        users.push(user);
+      }
+
+      // Store Gmail refresh token
+      tokenStore.setToken(
+        user.id,
+        email,
+        tokens.refresh_token,
+        tokens.access_token,
+        tokens.expiry_date ?? undefined
+      );
+
+      // Generate app tokens
+      const { accessToken, refreshToken } = generateTokens(user.id, user.email);
+
+      // Store app refresh token
+      refreshTokenStore.set(refreshToken, user.id);
+
+      // Redirect to frontend with tokens in URL params (frontend will store them)
+      const redirectUrl = `${process.env.FRONTEND_URL}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`;
+      res.redirect(redirectUrl);
+    } catch (error) {
+      console.error("Google OAuth callback error:", error);
+      res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+    }
+  }
+);
+
+// POST /api/auth/google - Google OAuth Login (Legacy - client-side token verification)
 router.post("/google", async (req: Request, res: Response): Promise<void> => {
   try {
     const { credential }: GoogleAuthRequest = req.body;
@@ -276,10 +389,33 @@ router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
 router.post("/logout", async (req: Request, res: Response): Promise<void> => {
   try {
     const { refreshToken }: RefreshTokenRequest = req.body;
+    const authHeader = req.headers.authorization;
 
     if (refreshToken) {
-      // Remove refresh token from store
+      // Remove app refresh token from store
+      const userId = refreshTokenStore.get(refreshToken);
       refreshTokenStore.delete(refreshToken);
+
+      // Also remove Gmail tokens
+      if (userId) {
+        tokenStore.deleteToken(userId);
+      }
+    }
+
+    // Extract userId from access token if available
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      try {
+        const decoded = jwt.verify(
+          token,
+          process.env.JWT_SECRET as string
+        ) as JwtPayload;
+
+        // Remove Gmail tokens for this user
+        tokenStore.deleteToken(decoded.userId);
+      } catch (error) {
+        // Token invalid or expired, ignore
+      }
     }
 
     res.json({

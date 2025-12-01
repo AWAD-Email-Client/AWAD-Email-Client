@@ -16,6 +16,7 @@ interface AuthContextType {
   loginWithGoogle: (request: GoogleAuthRequest) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
+  setUserData: (userData: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -48,9 +49,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const response = await apiClient.post("/auth/refresh", {
             refreshToken,
           });
-          const { accessToken, user: userData } = response.data;
+          const { accessToken } = response.data;
 
           setAccessToken(accessToken);
+
+          // Decode JWT to get user info since /auth/refresh doesn't return user data
+          const payload = JSON.parse(atob(accessToken.split(".")[1]));
+          const userData: User = {
+            id: payload.userId,
+            email: payload.email,
+            name: payload.email.split("@")[0],
+          };
           setUser(userData);
         } catch (error) {
           // Refresh failed, clear tokens
@@ -105,6 +114,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     navigate("/login");
   };
 
+  const setUserData = (userData: User) => {
+    console.log("[AuthContext] setUserData called with:", userData);
+    setUser(userData);
+    console.log("[AuthContext] User state updated");
+  };
+
   const value: AuthContextType = {
     user,
     loading,
@@ -112,6 +127,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     loginWithGoogle,
     logout,
     isAuthenticated: !!user,
+    setUserData,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

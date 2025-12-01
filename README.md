@@ -1,44 +1,44 @@
-# 📧 Email Dashboard - Production-Grade React Application
+# 📧 Email Dashboard - React Application with Gmail API Integration
 
-A complete, production-ready email dashboard application built with **React**, **TypeScript**, **OAuth authentication**, and best-practice token management.
+A complete, production-ready email dashboard application built with **React**, **TypeScript**, **Gmail API**, and **OAuth2** authentication following industry best practices.
 
 ![Tech Stack](https://img.shields.io/badge/React-19-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
-![Vite](https://img.shields.io/badge/Vite-7.2-purple)
-![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-cyan)
+![Gmail API](https://img.shields.io/badge/Gmail_API-v1-red)
+![Node.js](https://img.shields.io/badge/Node.js-18+-green)
 
-## ✨ Features
+## ✨ Overview
 
-### Authentication
+This project implements **Track A (Gmail API Integration)** with a complete OAuth2 Authorization Code Flow, allowing users to access their real Gmail account through a modern, responsive web interface.
 
-- ✅ **Email/Password Login** with validation
-- ✅ **Google OAuth 2.0** Sign-In
-- ✅ **JWT Token Management** (access + refresh)
-- ✅ **Automatic Token Refresh** with concurrency lock
-- ✅ **Secure Storage** (access in memory, refresh in localStorage)
-- ✅ **Protected Routes** with authentication checks
+### 🎯 Key Features
 
-### Email Dashboard
+**Gmail Integration (Track A)**
 
-- ✅ **3-Column Layout** (Mailboxes, Email List, Email Detail)
-- ✅ **6 Mailboxes**: Inbox, Starred, Sent, Drafts, Archive, Trash
-- ✅ **Email Operations**: Star, Delete, Mark Read/Unread
-- ✅ **Bulk Actions**: Select All, Delete Multiple, Mark Multiple
-- ✅ **Search Functionality** across emails
-- ✅ **Responsive Design** (mobile-friendly)
-- ✅ **Real-time Updates** with unread counts
-- ✅ **HTML Email Rendering** (sanitized with DOMPurify)
-- ✅ **Attachment Display**
+- ✅ **OAuth2 Authorization Code Flow** (server-side token exchange)
+- ✅ **Real Gmail Access** - Read, send, and modify your actual Gmail
+- ✅ **Secure Token Management** - Refresh tokens stored server-side only
+- ✅ **Automatic Token Refresh** - Seamless experience, never interrupted
+- ✅ **Gmail API Proxy** - Backend handles all Gmail API calls securely
 
-### Technical Excellence
+**Authentication**
 
-- ✅ **TypeScript** for type safety
-- ✅ **Axios Interceptors** for token handling
-- ✅ **Concurrency Lock** prevents multiple refresh attempts
-- ✅ **Context API** for state management
-- ✅ **Modern UI** with Tailwind CSS
-- ✅ **Accessibility** considerations
-- ✅ **Error Handling** with user feedback
+- ✅ **Google OAuth 2.0** Sign-In with proper authorization flow
+- ✅ **Demo Account** - Email/password login with mock data
+- ✅ **JWT Token Management** (access + refresh tokens)
+- ✅ **Concurrency Lock** - Prevents multiple refresh attempts
+- ✅ **Protected Routes** - Automatic authentication checks
+
+**Email Features**
+
+- ✅ **3-Column Responsive Layout** - Mailboxes, Email List, Email Detail
+- ✅ **Real Gmail Operations** - Star, delete, mark read/unread, send emails
+- ✅ **Attachment Support** - View and download email attachments
+- ✅ **HTML Email Rendering** - Properly formatted email display
+- ✅ **Search & Filter** - Find emails quickly
+- ✅ **Compose & Reply** - Send new emails and reply to existing ones
+
+📖 **[Complete Gmail Integration Guide →](GMAIL_INTEGRATION_GUIDE.md)**
 
 ## 🏗️ Architecture
 
@@ -96,10 +96,40 @@ G_03/
 
 ## 🚀 Quick Start
 
+### Two Ways to Use This App
+
+#### Option 1: Real Gmail Integration (Recommended)
+
+Access your actual Gmail account with full OAuth2 security:
+
+1. **[Follow the complete Gmail setup guide →](GMAIL_INTEGRATION_GUIDE.md)**
+
+   - Set up Google Cloud Project
+   - Enable Gmail API
+   - Configure OAuth credentials
+   - Takes ~10 minutes
+
+2. Sign in with your Gmail account
+3. Grant permissions
+4. Access your real inbox!
+
+#### Option 2: Demo Mode (Mock Data)
+
+Quick start without Google Cloud setup:
+
+```bash
+# Demo credentials
+Email: demo@example.com
+Password: password123
+```
+
+Uses mock email data for testing the UI.
+
 ### Prerequisites
 
 - Node.js 18+ and npm
 - Git
+- Google Cloud Account (for Gmail integration)
 
 ### 1. Clone Repository
 
@@ -117,6 +147,9 @@ npm install
 
 # Configure environment
 cp .env.example .env
+
+# For Gmail integration: Edit .env and add your Google OAuth credentials
+# For demo mode: Keep defaults
 
 # Start backend server
 npm run dev
@@ -143,14 +176,14 @@ Frontend runs on: `http://localhost:5173`
 
 ### 4. Login
 
-Open `http://localhost:5173` and use:
+Open `http://localhost:5173` and either:
 
-```
-Email: demo@example.com
-Password: demo123
-```
-
-Or click "Sign in with Google" (mock implementation).
+- **Click "Sign in with Gmail"** (requires Google Cloud setup)
+- **Or use demo credentials:**
+  ```
+  Email: demo@example.com
+  Password: password123
+  ```
 
 ## 🔐 Authentication Flow
 

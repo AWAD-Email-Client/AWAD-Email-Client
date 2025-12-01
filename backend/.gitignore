@@ -7,3 +7,6 @@ yarn-debug.log*
 yarn-error.log*
 .vscode/
 .idea/
+
+# Gmail OAuth tokens (contains sensitive refresh tokens)
+.tokens.json
