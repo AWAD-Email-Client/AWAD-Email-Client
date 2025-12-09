@@ -15,6 +15,7 @@ import {
 import usersData from "../data/users.json";
 import gmailService from "../services/gmail";
 import tokenStore from "../services/tokenStore";
+import UserModel from "../models/User";
 
 const router = express.Router();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -59,11 +60,10 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Find user by email
-    const users = usersData as User[];
-    const user = users.find((u) => u.email === email);
+    // Find user by email in MongoDB
+    const userDoc = await UserModel.findOne({ email: email.toLowerCase() });
 
-    if (!user) {
+    if (!userDoc) {
       res.status(401).json({
         success: false,
         message: "Invalid email or password",
@@ -71,8 +71,16 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Verify password (mock users have password: "password123")
-    const isValidPassword = await bcrypt.compare(password, user.password);
+    // Verify password
+    if (!userDoc.password) {
+      res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+      return;
+    }
+
+    const isValidPassword = await bcrypt.compare(password, userDoc.password);
 
     if (!isValidPassword) {
       res.status(401).json({
@@ -81,6 +89,16 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
       });
       return;
     }
+
+    // Convert to User type for response
+    const user: User = {
+      id: userDoc._id.toString(),
+      email: userDoc.email,
+      password: userDoc.password,
+      name: userDoc.name,
+      googleId: userDoc.googleId || null,
+      createdAt: userDoc.createdAt.toISOString(),
+    };
 
     // Generate tokens
     const { accessToken, refreshToken } = generateTokens(user.id, user.email);
@@ -174,22 +192,32 @@ router.get(
         return;
       }
 
-      // Find or create user
-      const users = usersData as User[];
-      let user = users.find((u) => u.email === email);
+      // Find or create user in MongoDB
+      let userDoc = await UserModel.findOne({ email: email.toLowerCase() });
 
-      if (!user) {
+      if (!userDoc) {
         // Create new user
-        user = {
-          id: "user-" + Date.now(),
-          email,
-          password: "", // No password for Google users
-          name: email.split("@")[0],
-          googleId: email, // Using email as googleId for now
-          createdAt: new Date().toISOString(),
-        };
-        users.push(user);
+        userDoc = new UserModel({
+          email: email.toLowerCase(),
+          name: userInfoResponse.data.name || email.split("@")[0],
+          googleId: userInfoResponse.data.id || email,
+        });
+        await userDoc.save();
+      } else if (!userDoc.googleId) {
+        // Link Google account to existing user
+        userDoc.googleId = userInfoResponse.data.id || email;
+        await userDoc.save();
       }
+
+      // Convert to User type
+      const user: User = {
+        id: userDoc._id.toString(),
+        email: userDoc.email,
+        password: userDoc.password || "",
+        name: userDoc.name,
+        googleId: userDoc.googleId || null,
+        createdAt: userDoc.createdAt.toISOString(),
+      };
 
       // Store Gmail refresh token
       tokenStore.setToken(
@@ -273,29 +301,37 @@ router.post("/google", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Find or create user
-    const users = usersData as User[];
-    let user = users.find(
-      (u) => u.googleId === googleUser.sub || u.email === googleUser.email
-    );
+    // Find or create user in MongoDB
+    let userDoc = await UserModel.findOne({
+      $or: [
+        { googleId: googleUser.sub },
+        { email: googleUser.email.toLowerCase() },
+      ],
+    });
 
-    if (!user) {
+    if (!userDoc) {
       // Create new user
-      user = {
-        id: "user-" + Date.now(),
-        email: googleUser.email,
-        password: "", // No password for Google users
+      userDoc = new UserModel({
+        email: googleUser.email.toLowerCase(),
         name: googleUser.name,
         googleId: googleUser.sub,
-        createdAt: new Date().toISOString(),
-      };
-
-      // In production, save to database
-      users.push(user);
-    } else if (!user.googleId) {
+      });
+      await userDoc.save();
+    } else if (!userDoc.googleId) {
       // Link Google account to existing user
-      user.googleId = googleUser.sub;
+      userDoc.googleId = googleUser.sub;
+      await userDoc.save();
     }
+
+    // Convert to User type
+    const user: User = {
+      id: userDoc._id.toString(),
+      email: userDoc.email,
+      password: userDoc.password || "",
+      name: userDoc.name,
+      googleId: userDoc.googleId || null,
+      createdAt: userDoc.createdAt.toISOString(),
+    };
 
     // Generate tokens
     const { accessToken, refreshToken } = generateTokens(user.id, user.email);

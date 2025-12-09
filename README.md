@@ -1,4 +1,4 @@
-# 📧 Email Dashboard - React Application with Gmail API Integration
+# 📧 Email Kanban Workflow Manager - AI-Powered Email Productivity
 
 ## 📹 Demo & Repository
 
@@ -7,19 +7,32 @@
 - **Live Frontend**: https://awad-react-authentication.vercel.app
 - **Live Backend**: https://awad-react-authentication.onrender.com
 
-A production-ready email dashboard built with **React**, **TypeScript**, **Gmail API**, and **OAuth2** authentication.
+A production-ready email productivity tool with **AI summarization** and **Kanban workflow management**, built with **React**, **TypeScript**, **Gmail API**, and **OpenAI**.
 
 ![Tech Stack](https://img.shields.io/badge/React-19-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
 ![Gmail API](https://img.shields.io/badge/Gmail_API-v1-red)
+![OpenAI](https://img.shields.io/badge/OpenAI-GPT--3.5-green)
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green)
 
-## ✨ Key Features
+## 🎯 What's New - Kanban Workflow System
+
+This project focuses on **AI-powered productivity features** rather than replicating standard email clients:
+
+### 🆕 Core Features
+
+- ✅ **Kanban Board Interface** - Visual workflow with 4 columns (Inbox, To Do, Done, Snoozed)
+- ✅ **AI Email Summarization** - OpenAI GPT-3.5 generates concise summaries
+- ✅ **Drag-and-Drop Workflow** - Intuitive email management with real-time updates
+- ✅ **Smart Snooze System** - Temporarily hide emails with automatic restoration
+- ✅ **Dual View Modes** - Toggle between Kanban and traditional list view
+- ✅ **Real-time Synchronization** - All changes persist to backend immediately
+
+### 📋 Traditional Features
 
 - ✅ **OAuth2 Authorization Code Flow** - Secure server-side token exchange
 - ✅ **Real Gmail Integration** - Read, send, and manage your Gmail
 - ✅ **Automatic Token Refresh** - Seamless user experience
-- ✅ **3-Column Responsive Layout** - Mailboxes, List, Detail view
 - ✅ **Email Operations** - Star, delete, mark read/unread, compose, reply
 - ✅ **Attachment Support** - View and download attachments
 - ✅ **Protected Routes** - JWT-based authentication
@@ -28,8 +41,15 @@ A production-ready email dashboard built with **React**, **TypeScript**, **Gmail
 
 - **Frontend**: React 19 + TypeScript + Vite + TailwindCSS
 - **Backend**: Express.js + TypeScript + Gmail API
+- **AI Service**: OpenAI GPT-3.5-turbo API
 - **Auth**: OAuth2 Authorization Code Flow + JWT
 - **Deployment**: Vercel (Frontend) + Render (Backend)
+
+## 📚 Documentation
+
+- **[Quick Start Guide](QUICKSTART.md)** - Get running in 5 minutes
+- **[Full Kanban Documentation](KANBAN_DOCUMENTATION.md)** - Complete feature details
+- **[Gmail Integration Guide](GMAIL_INTEGRATION_GUIDE.md)** - Setup real Gmail access
 
 ## 🚀 Quick Start
 

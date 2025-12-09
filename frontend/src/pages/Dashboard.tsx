@@ -6,6 +6,8 @@ import type { Mailbox, Email } from "../types";
 import EmailDetail from "../components/dashboard/EmailDetail";
 import EmailList from "../components/dashboard/EmailList";
 import ComposeEmail from "../components/dashboard/ComposeEmail";
+import KanbanBoard from "../components/dashboard/KanbanBoard";
+import { LayoutGrid, List } from "lucide-react";
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -16,6 +18,7 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [emailsLoading, setEmailsLoading] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "kanban">("kanban"); // Default to kanban
   const [composeMode, setComposeMode] = useState<{
     replyTo?: Email;
     replyAll?: boolean;
@@ -191,44 +194,91 @@ const Dashboard: React.FC = () => {
             <p className="text-sm text-gray-600">{user?.email}</p>
           </div>
         </div>
-        <button
-          onClick={logout}
-          className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          Sign Out
-        </button>
+        <div className="flex items-center gap-4">
+          {/* View Mode Toggle */}
+          <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode("list")}
+              className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === "list"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              <List className="w-4 h-4" />
+              List
+            </button>
+            <button
+              onClick={() => setViewMode("kanban")}
+              className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === "kanban"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              Kanban
+            </button>
+          </div>
+
+          <button
+            onClick={logout}
+            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            Sign Out
+          </button>
+        </div>
       </header>
 
-      {/* Main Content - 3 Column Layout */}
+      {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Column 1: Mailboxes (~20%) */}
-        <Sidebar
-          mailboxes={mailboxes}
-          selectedMailbox={selectedMailbox}
-          onSelectMailbox={handleMailboxSelect}
-        />
+        {viewMode === "kanban" ? (
+          /* Kanban View - Full Width */
+          <div className="flex-1 overflow-hidden">
+            {selectedMailbox ? (
+              <KanbanBoard
+                mailboxId={selectedMailbox.id}
+                onSelectEmail={handleEmailSelect}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-gray-500">Loading mailboxes...</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Traditional List View - 3 Column Layout */
+          <>
+            {/* Column 1: Mailboxes (~20%) */}
+            <Sidebar
+              mailboxes={mailboxes}
+              selectedMailbox={selectedMailbox}
+              onSelectMailbox={handleMailboxSelect}
+            />
 
-        {/* Column 2: Email List (~40%) */}
-        <EmailList
-          emails={emails}
-          loading={emailsLoading}
-          selectedEmail={selectedEmail}
-          onSelectEmail={handleEmailSelect}
-          onToggleStar={handleToggleStar}
-          onDelete={handleDeleteEmail}
-          onMarkAsRead={handleMarkAsRead}
-          onRefresh={handleRefresh}
-          onCompose={handleCompose}
-        />
+            {/* Column 2: Email List (~40%) */}
+            <EmailList
+              emails={emails}
+              loading={emailsLoading}
+              selectedEmail={selectedEmail}
+              onSelectEmail={handleEmailSelect}
+              onToggleStar={handleToggleStar}
+              onDelete={handleDeleteEmail}
+              onMarkAsRead={handleMarkAsRead}
+              onRefresh={handleRefresh}
+              onCompose={handleCompose}
+            />
 
-        {/* Column 3: Email Detail (~40%) */}
-        <EmailDetail
-          email={selectedEmail}
-          onToggleStar={handleToggleStar}
-          onDelete={handleDeleteEmail}
-          onReply={handleReply}
-          onForward={handleForward}
-        />
+            {/* Column 3: Email Detail (~40%) */}
+            <EmailDetail
+              email={selectedEmail}
+              onToggleStar={handleToggleStar}
+              onDelete={handleDeleteEmail}
+              onReply={handleReply}
+              onForward={handleForward}
+            />
+          </>
+        )}
       </div>
 
       {/* Compose Email Modal */}
@@ -240,6 +290,35 @@ const Dashboard: React.FC = () => {
         replyAll={composeMode.replyAll}
         forward={composeMode.forward}
       />
+
+      {/* Email Detail Modal for Kanban View */}
+      {viewMode === "kanban" && selectedEmail && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setSelectedEmail(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <EmailDetail
+              email={selectedEmail}
+              onToggleStar={handleToggleStar}
+              onDelete={handleDeleteEmail}
+              onReply={handleReply}
+              onForward={handleForward}
+            />
+            <div className="p-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setSelectedEmail(null)}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
