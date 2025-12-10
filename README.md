@@ -1,4 +1,4 @@
-# 📧 Email Dashboard - React Application with Gmail API Integration
+# 📧 Email Kanban Workflow Manager - AI-Powered Email Productivity
 
 ## 📹 Demo & Repository
 
@@ -7,19 +7,45 @@
 - **Live Frontend**: https://awad-react-authentication.vercel.app
 - **Live Backend**: https://awad-react-authentication.onrender.com
 
-A production-ready email dashboard built with **React**, **TypeScript**, **Gmail API**, and **OAuth2** authentication.
+A production-ready email productivity tool with **AI summarization** and **Kanban workflow management**, built with **React**, **TypeScript**, **Gmail API**, **Google Gemini AI**, and **MongoDB**.
 
 ![Tech Stack](https://img.shields.io/badge/React-19-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
 ![Gmail API](https://img.shields.io/badge/Gmail_API-v1-red)
+![Google Gemini](https://img.shields.io/badge/Google_Gemini-1.5--flash-green)
+![MongoDB](https://img.shields.io/badge/MongoDB-7.0-green)
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green)
 
-## ✨ Key Features
+## 🎯 What's New - Kanban Workflow System
+
+This project focuses on **AI-powered productivity features** rather than replicating standard email clients:
+
+### 🆕 Core Features
+
+- ✅ **Kanban Board Interface** - Visual workflow with 4 columns (Inbox, To Do, Done, Snoozed)
+  - Drag-and-drop emails between columns with smooth animations
+  - Real-time status updates persisted to MongoDB
+  - Each column shows email count and scrolls independently
+- ✅ **AI Email Summarization** - Google Gemini 1.5-flash generates intelligent summaries
+  - On-demand generation via button click (not auto-generated)
+  - Ephemeral summaries (not persisted to database)
+  - Smart handling of empty or HTML-only email bodies
+  - Loading states and error handling
+- ✅ **Smart Snooze System** - Intelligent email postponement
+  - Drag to Snoozed column = auto-snooze for 1 hour
+  - Manual snooze options: 1h, 3h, 1 day, 3 days
+  - Auto-expire: Emails automatically return to Inbox when time's up
+  - Backend checks expired snoozes every API call
+- ✅ **Dual View Modes** - Toggle between Kanban and traditional list view
+- ✅ **Real-time Synchronization** - All changes persist to MongoDB immediately
+- ✅ **Custom Scrollbars** - Beautiful, smooth scrolling throughout the app
+- ✅ **No Page Reloads** - Pure React state management for instant UI updates
+
+### 📋 Traditional Features
 
 - ✅ **OAuth2 Authorization Code Flow** - Secure server-side token exchange
 - ✅ **Real Gmail Integration** - Read, send, and manage your Gmail
 - ✅ **Automatic Token Refresh** - Seamless user experience
-- ✅ **3-Column Responsive Layout** - Mailboxes, List, Detail view
 - ✅ **Email Operations** - Star, delete, mark read/unread, compose, reply
 - ✅ **Attachment Support** - View and download attachments
 - ✅ **Protected Routes** - JWT-based authentication
@@ -28,8 +54,10 @@ A production-ready email dashboard built with **React**, **TypeScript**, **Gmail
 
 - **Frontend**: React 19 + TypeScript + Vite + TailwindCSS
 - **Backend**: Express.js + TypeScript + Gmail API
+- **Database**: MongoDB (Mongoose ODM) for email persistence and user data
+- **AI Service**: Google Gemini 1.5-flash API (@google/generative-ai SDK)
 - **Auth**: OAuth2 Authorization Code Flow + JWT
-- **Deployment**: Vercel (Frontend) + Render (Backend)
+- **Deployment**: Vercel (Frontend) + Render (Backend) + MongoDB Atlas
 
 ## 🚀 Quick Start
 
@@ -85,8 +113,11 @@ npm install
 # Configure environment
 cp .env.example .env
 
-# For Gmail integration: Edit .env and add your Google OAuth credentials
-# For demo mode: Keep defaults
+# Edit .env and add required credentials:
+# - MONGODB_URI (get from MongoDB Atlas)
+# - GEMINI_API_KEY (get from Google AI Studio)
+# - GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET (for Gmail OAuth)
+# - JWT_SECRET & JWT_REFRESH_SECRET
 
 # Start backend server
 npm run dev
@@ -125,18 +156,21 @@ Open `http://localhost:5173` and either:
 ## 🔐 Authentication Flow
 
 ### Login Process
+
 1. User enters credentials → Frontend sends to backend
 2. Backend verifies password → Generates JWT tokens
 3. Access token stored in-memory, refresh token in localStorage
 4. Redirect to dashboard
 
 ### Token Refresh Flow
+
 1. API request with expired token → Backend returns 401
 2. Frontend checks refresh queue (concurrency lock)
 3. Single refresh request → Backend returns new access token
 4. Update token in-memory → Retry all queued requests
 
 ### Google OAuth Flow
+
 1. Click "Sign in with Google" → Google consent screen
 2. User grants permission → Google returns credential
 3. Frontend sends to backend → Backend verifies with Google
@@ -169,6 +203,7 @@ Open `http://localhost:5173` and either:
 ### Concurrency Lock Pattern
 
 **Implementation**: `frontend/src/api/axios.ts` uses `isRefreshing` flag and `failedQueue` to ensure:
+
 - ✅ Only ONE refresh request for multiple concurrent 401 errors
 - ✅ All failed requests queued and retried with new token
 - ✅ Prevents token exhaustion and multiple auth prompts
@@ -195,9 +230,12 @@ GET    /api/mailboxes/:id/emails  // Get emails in mailbox
 #### Emails
 
 ```typescript
-GET    /api/emails/:id      // Get email details
-PATCH  /api/emails/:id      // Update email (read, star)
-DELETE /api/emails/:id      // Delete email
+GET    /api/emails/:id              // Get email details
+PATCH  /api/emails/:id              // Update email (read, star, status)
+DELETE /api/emails/:id              // Delete email
+GET    /api/emails/by-status/:status // Get emails by workflow status (Kanban)
+POST   /api/emails/:id/summarize    // Generate AI summary (ephemeral)
+POST   /api/emails/:id/snooze       // Snooze email with timestamp
 ```
 
 ### Frontend API Client
@@ -299,6 +337,7 @@ const emails = await apiClient.get("/mailboxes/inbox-1/emails");
 ### Step 5: Update Environment Variables
 
 **Backend `.env`:**
+
 ```env
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
@@ -306,6 +345,7 @@ GOOGLE_REDIRECT_URI=http://localhost:5000/api/auth/google/callback
 ```
 
 **Frontend `.env`:**
+
 ```env
 VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 ```
@@ -329,76 +369,6 @@ npm run dev
 - **OAuth Consent**: For production, submit for Google verification
 - **Scopes**: Request minimal scopes needed for your app
 
-## 📧 IMAP/POP3 Test Accounts Setup
-
-### Gmail via IMAP (Recommended for Testing)
-
-#### Step 1: Enable IMAP in Gmail
-1. Go to Gmail Settings → **"Forwarding and POP/IMAP"**
-2. Enable **"IMAP access"**
-3. Click **"Save Changes"**
-
-#### Step 2: Generate App Password
-1. Go to [Google Account Security](https://myaccount.google.com/security)
-2. Enable **2-Step Verification** (required)
-3. Go to **"App passwords"**
-4. Select **"Mail"** and **"Other (Custom name)"**
-5. Enter name: `Email Dashboard IMAP`
-6. Click **"Generate"**
-7. **Copy** the 16-character password
-
-#### Step 3: Configure Backend
-**Backend `.env`:**
-```env
-IMAP_HOST=imap.gmail.com
-IMAP_PORT=993
-IMAP_SECURE=true
-IMAP_USER=your-email@gmail.com
-IMAP_PASSWORD=your-16-char-app-password
-
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=your-email@gmail.com
-SMTP_PASSWORD=your-16-char-app-password
-```
-
-### Alternative Providers
-
-#### Outlook/Hotmail IMAP
-```env
-IMAP_HOST=outlook.office365.com
-IMAP_PORT=993
-IMAP_SECURE=true
-IMAP_USER=your-email@outlook.com
-IMAP_PASSWORD=your-password
-
-SMTP_HOST=smtp.office365.com
-SMTP_PORT=587
-```
-
-#### Yahoo Mail IMAP
-```env
-IMAP_HOST=imap.mail.yahoo.com
-IMAP_PORT=993
-IMAP_SECURE=true
-IMAP_USER=your-email@yahoo.com
-IMAP_PASSWORD=your-app-password  # Generate in Yahoo Account Security
-
-SMTP_HOST=smtp.mail.yahoo.com
-SMTP_PORT=587
-```
-
-### Testing IMAP Connection
-
-```bash
-cd backend
-npm install imap-simple
-node test-imap.js  # Create test file with IMAP config
-```
-
-See `backend/test-imap.js` for connection testing code.
-
 ## 🔒 Token Storage & Security Considerations
 
 ### Access Token: In-Memory Storage
@@ -411,11 +381,13 @@ See `backend/test-imap.js` for connection testing code.
 ### Refresh Token: localStorage (Dev) → HttpOnly Cookie (Prod)
 
 **Current (Development)**:
+
 - Location: `localStorage.setItem('refreshToken', token)`
 - ✅ Persistence across sessions
 - ⚠️ XSS vulnerability
 
 **Production Recommendation**:
+
 - HttpOnly Secure Cookie with `SameSite=Strict`
 - ✅ XSS protection
 - ✅ CSRF protection
@@ -423,14 +395,14 @@ See `backend/test-imap.js` for connection testing code.
 
 ### Comparison Table
 
-| Storage Method | XSS Risk | CSRF Risk | Persistence | Complexity |
-|---------------|----------|-----------|-------------|------------|
-| **In-Memory** | ✅ Low | ✅ N/A | ❌ No | ✅ Simple |
-| **localStorage** | ❌ High | ✅ N/A | ✅ Yes | ✅ Simple |
-| **HttpOnly Cookie** | ✅ Low | ⚠️ Medium* | ✅ Yes | ⚠️ Medium |
-| **SessionStorage** | ❌ High | ✅ N/A | ⚠️ Tab-only | ✅ Simple |
+| Storage Method      | XSS Risk | CSRF Risk   | Persistence | Complexity |
+| ------------------- | -------- | ----------- | ----------- | ---------- |
+| **In-Memory**       | ✅ Low   | ✅ N/A      | ❌ No       | ✅ Simple  |
+| **localStorage**    | ❌ High  | ✅ N/A      | ✅ Yes      | ✅ Simple  |
+| **HttpOnly Cookie** | ✅ Low   | ⚠️ Medium\* | ✅ Yes      | ⚠️ Medium  |
+| **SessionStorage**  | ❌ High  | ✅ N/A      | ⚠️ Tab-only | ✅ Simple  |
 
-*Mitigated with `SameSite` attribute
+\*Mitigated with `SameSite` attribute
 
 ### Security Measures Implemented
 
@@ -446,10 +418,12 @@ See `backend/test-imap.js` for connection testing code.
 ### Justification for Current Approach
 
 For this **academic project**, we use:
+
 - Access token: **In-memory** (secure, industry standard)
 - Refresh token: **localStorage** (convenient for development/demo)
 
 For **production deployment**, migrate to:
+
 - Access token: **In-memory** (unchanged)
 - Refresh token: **HttpOnly Secure Cookie** with `SameSite=Strict`
 
@@ -460,12 +434,14 @@ This balances **security**, **usability**, and **implementation complexity** for
 ### Method 1: Shorten Token Lifetime (Recommended for Testing)
 
 **Backend `.env`:**
+
 ```env
 ACCESS_TOKEN_EXPIRY=1m   # 1 minute instead of 15m
 REFRESH_TOKEN_EXPIRY=5m  # 5 minutes instead of 7d
 ```
 
 **Test Steps**:
+
 1. Login to app
 2. Wait 1 minute (access token expires)
 3. Click any email or mailbox → Backend returns 401
@@ -476,39 +452,43 @@ REFRESH_TOKEN_EXPIRY=5m  # 5 minutes instead of 7d
 ### Method 2: Manual Token Manipulation (Browser DevTools)
 
 **Access Token Expiry**:
+
 ```javascript
 // In browser console
 // Delete access token from memory (simulates expiry)
 // Then make any API call - should trigger refresh
 
 // Open DevTools → Console
-localStorage.getItem('refreshToken')  // Verify exists
+localStorage.getItem("refreshToken"); // Verify exists
 // Make an API call - frontend will auto-refresh
 ```
 
 **Refresh Token Expiry**:
+
 ```javascript
 // In browser console
-localStorage.removeItem('refreshToken')
+localStorage.removeItem("refreshToken");
 // Next API call will fail and force logout
 ```
 
 ### Method 3: Backend Debug Endpoint (Development Only)
 
 **Add to `backend/src/routes/auth.ts`:**
+
 ```typescript
 // REMOVE IN PRODUCTION
-router.post('/debug/expire-token', (req: Request, res: Response) => {
+router.post("/debug/expire-token", (req: Request, res: Response) => {
   const { refreshToken } = req.body;
-  
+
   // Remove from store to simulate expiry
   refreshTokenStore.delete(refreshToken);
-  
-  res.json({ message: 'Refresh token expired' });
+
+  res.json({ message: "Refresh token expired" });
 });
 ```
 
 **Frontend test**:
+
 ```bash
 curl -X POST http://localhost:5000/api/auth/debug/expire-token \
   -H "Content-Type: application/json" \
@@ -518,28 +498,32 @@ curl -X POST http://localhost:5000/api/auth/debug/expire-token \
 ### Method 4: Modify JWT Expiry Time Manually
 
 **Create expired token for testing**:
+
 ```typescript
 // backend/src/routes/auth.ts
 const testExpiredToken = jwt.sign(
   { userId, email },
   SECRET,
-  { expiresIn: '-1m' }  // Already expired
+  { expiresIn: "-1m" } // Already expired
 );
 ```
 
 ### Demo Video Steps
 
 1. **Show Normal Flow**:
+
    - Login
    - Browse emails
    - Check localStorage for refresh token
 
 2. **Simulate Access Token Expiry**:
+
    - Wait 1 minute (with `ACCESS_TOKEN_EXPIRY=1m`)
    - Open email → Show network tab: 401 → automatic refresh → 200 OK
    - User sees no interruption
 
 3. **Simulate Refresh Token Expiry**:
+
    - Clear `localStorage.removeItem('refreshToken')`
    - Click any action
    - Show: Forced logout, redirected to `/login`
@@ -547,17 +531,20 @@ const testExpiredToken = jwt.sign(
 
 4. **Re-login**:
    - Login again
+
 ## 🚀 Deployment
 
 ### Backend (Render/Railway)
+
 ```bash
 Build: cd backend && npm install && npm run build
 Start: cd backend && npm start
 ```
 
-**Environment Variables**: JWT_SECRET, JWT_REFRESH_SECRET, GOOGLE_CLIENT_ID, NODE_ENV, FRONTEND_URL
+**Environment Variables**: JWT_SECRET, JWT_REFRESH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GEMINI_API_KEY, MONGODB_URI, NODE_ENV, FRONTEND_URL
 
 ### Frontend (Vercel/Netlify)
+
 ```bash
 Build: cd frontend && npm install && npm run build
 Publish: frontend/dist
@@ -608,70 +595,6 @@ Publish: frontend/dist
 - ✅ Request/response transformation
 - ✅ Better error handling
 - ✅ Automatic JSON parsing
-
-## 📝 Assignment Requirements Checklist
-
-### ✅ General Requirements
-
-- [x] React + Vite setup
-- [x] TypeScript for type safety
-- [x] Clean, modern UI
-- [x] Best practices followed
-- [x] No code omissions
-- [x] Complete README
-
-### ✅ Authentication
-
-- [x] Email/Password login form
-- [x] Google Sign-In integration
-- [x] Access token in memory
-- [x] Refresh token in localStorage
-- [x] Automatic token refresh
-- [x] Concurrency lock implementation
-- [x] Auto-logout on refresh failure
-- [x] ProtectedRoute component
-
-### ✅ Mock API
-
-- [x] GET /mailboxes endpoint
-- [x] GET /mailboxes/:id/emails endpoint
-- [x] GET /emails/:id endpoint
-- [x] Realistic JSON data
-- [x] Express.js backend
-
-### ✅ UI Implementation
-
-- [x] Login page with validation
-- [x] 3-column dashboard
-- [x] Mailboxes sidebar (20%)
-- [x] Email list (40%)
-- [x] Email detail (40%)
-- [x] All required features
-- [x] Responsive design
-- [x] Empty states
-- [x] Loading states
-
-### ✅ Deployment
-
-- [x] Build commands provided
-- [x] Environment variable instructions
-- [x] Platform recommendations
-- [x] Optimization guidelines
-
-### ✅ Documentation
-
-- [x] Complete README
-- [x] Setup instructions
-- [x] Architecture explanation
-- [x] Security justification
-- [x] API references
-- [x] Deployment guide
-
-### ✅ Stretch Goals (Outlined)
-
-- [x] Silent token refresh code
-- [x] HttpOnly cookie implementation
-- [x] Multi-tab logout sync
 
 ## 🤝 Contributing
 

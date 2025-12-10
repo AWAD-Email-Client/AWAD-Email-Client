@@ -1,12 +1,16 @@
+// Load environment variables FIRST before any other imports
+import dotenv from "dotenv";
+dotenv.config();
+
 import express, { Application, Request, Response } from "express";
 import cors from "cors";
-import dotenv from "dotenv";
+import connectDB from "./config/database";
 import authRoutes from "./routes/auth";
 import mailboxesRoutes from "./routes/mailboxes";
 import emailsRoutes from "./routes/emails";
 
-// Load environment variables
-dotenv.config();
+// Connect to MongoDB
+connectDB();
 
 const app: Application = express();
 const PORT = process.env.PORT || 5000;
@@ -67,8 +71,8 @@ app.listen(PORT, () => {
     🌐  API: http://localhost:${PORT}                    
     ❤️   Health: http://localhost:${PORT}/health
     Environment: ${
-    process.env.NODE_ENV || "development"
-  }                          
+      process.env.NODE_ENV || "development"
+    }                          
   `);
 });
 

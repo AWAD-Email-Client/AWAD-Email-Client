@@ -48,6 +48,11 @@ export function parseGmailMessage(
   const isRead = !labelIds.includes("UNREAD");
   const isStarred = labelIds.includes("STARRED");
 
+  // Gmail web link
+  const gmailLink = message.id
+    ? `https://mail.google.com/mail/u/0/#inbox/${message.id}`
+    : null;
+
   return {
     id: message.id!,
     mailboxId,
@@ -63,6 +68,10 @@ export function parseGmailMessage(
     timestamp:
       date || new Date(parseInt(message.internalDate || "0")).toISOString(),
     attachments,
+    status: 'inbox',
+    snoozeUntil: null,
+    summary: null,
+    gmailLink,
   };
 }
 

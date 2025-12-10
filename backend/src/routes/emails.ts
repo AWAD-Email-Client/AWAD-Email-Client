@@ -1,19 +1,154 @@
 import express, { Request, Response } from "express";
-import { Email } from "../types";
+import { Email, EmailStatus } from "../types";
 import emailsData from "../data/emails.json";
 import mailboxesData from "../data/mailboxes.json";
 import { authMiddleware } from "../middleware/auth";
 import gmailService from "../services/gmail";
 import tokenStore from "../services/tokenStore";
 import { parseGmailMessage, createRawEmail } from "../utils/emailParser";
+import aiSummarization from "../services/aiSummarization";
+import EmailModel from "../models/Email";
 
 const router = express.Router();
 
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
+/**
+ * Helper function to get email from DB or fetch from Gmail and save with AI summary
+ * Falls back gracefully if MongoDB is not connected
+ */
+async function getOrCreateEmailFromGmail(
+  userId: string,
+  messageId: string,
+  mailboxId: string
+): Promise<Email> {
+  // Try to check if email exists in MongoDB
+  let existingEmail = null;
+  try {
+    existingEmail = await EmailModel.findOne({
+      emailId: messageId,
+      userId: userId,
+    });
+
+    if (existingEmail) {
+      // Return existing email from DB (already has summary, status, etc.)
+      return {
+        id: existingEmail.emailId,
+        userId: existingEmail.userId,
+        mailboxId: existingEmail.mailboxId || mailboxId,
+        from: existingEmail.from,
+        to: existingEmail.to,
+        cc: existingEmail.cc || [],
+        subject: existingEmail.subject,
+        body: existingEmail.body,
+        preview:
+          existingEmail.bodySnippet || existingEmail.body.substring(0, 150),
+        timestamp: existingEmail.timestamp.toISOString(),
+        isRead: existingEmail.isRead,
+        isStarred: existingEmail.isStarred,
+        attachments: existingEmail.attachments.map((att) => ({
+          id: att.attachmentId,
+          name: att.filename,
+          size: att.size.toString(),
+          type: att.mimeType,
+        })),
+        status: existingEmail.status,
+        summary: null, // Summary not persisted, generated on-demand only
+        snoozeUntil: existingEmail.snoozeUntil?.toISOString() || null,
+        gmailLink: `https://mail.google.com/mail/u/0/#inbox/${existingEmail.emailId}`,
+      } as Email;
+    }
+  } catch (error) {
+    console.warn(
+      "MongoDB query failed, fetching from Gmail without DB cache:",
+      error
+    );
+    // Continue to fetch from Gmail
+  }
+
+  // Email doesn't exist in DB (or DB not available), fetch from Gmail
+  const gmailMessage = await gmailService.getMessage(userId, messageId);
+  const parsedEmail = parseGmailMessage(gmailMessage, userId, mailboxId);
+
+  // Don't auto-generate AI summary - user will request it manually via button
+  // This saves API calls and improves performance
+
+  // Try to save to MongoDB (if connected)
+  try {
+    const labels = gmailMessage.labelIds || [];
+
+    const newEmail = new EmailModel({
+      emailId: parsedEmail.id,
+      threadId: gmailMessage.threadId,
+      userId: userId,
+      subject: parsedEmail.subject,
+      from: parsedEmail.from,
+      to: parsedEmail.to,
+      cc: parsedEmail.cc || [],
+      body: parsedEmail.body,
+      bodySnippet: parsedEmail.preview,
+      timestamp: new Date(parsedEmail.timestamp),
+      attachments: (parsedEmail.attachments || []).map((att) => ({
+        filename: att.name,
+        mimeType: att.type,
+        size: parseInt(att.size) || 0,
+        attachmentId: att.id || "",
+      })),
+      labels: labels,
+      mailboxId: mailboxId,
+      status: "inbox",
+      isRead: parsedEmail.isRead,
+      isStarred: parsedEmail.isStarred,
+    });
+
+    await newEmail.save();
+    console.log(`Email ${parsedEmail.id} saved to MongoDB`);
+  } catch (error) {
+    console.warn(
+      "Failed to save email to MongoDB, continuing without persistence:",
+      error
+    );
+    // Continue anyway - user still gets the email from Gmail
+  }
+
+  return {
+    ...parsedEmail,
+    summary: null, // Summary will be generated on-demand
+  };
+}
+
 // In-memory email store (initialized from JSON)
-let emails = [...(emailsData as Email[])];
+// Add default values for new fields
+let emails = (emailsData as Email[]).map((email) => ({
+  ...email,
+  status: (email as any).status || ("inbox" as EmailStatus),
+  snoozeUntil: (email as any).snoozeUntil || null,
+  summary: (email as any).summary || null,
+  gmailLink: (email as any).gmailLink || null,
+}));
+
+// Background job to check for expired snoozes every minute
+setInterval(async () => {
+  const now = new Date();
+  try {
+    // Find snoozed emails that have expired
+    const expiredEmails = await EmailModel.find({
+      status: "snoozed",
+      snoozeUntil: { $lte: now },
+    });
+
+    // Restore them to inbox
+    for (const email of expiredEmails) {
+      email.status = "inbox";
+      email.snoozeUntil = null;
+      await email.save();
+      console.log(`Email ${email.emailId} restored from snooze`);
+    }
+  } catch (error) {
+    console.error("Error checking expired snoozes:", error);
+  }
+}, 60000); // Check every minute
 
 // GET /api/mailboxes/:mailboxId/emails - Get emails for a specific mailbox
 router.get(
@@ -21,8 +156,13 @@ router.get(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = req.user?.userId;
-      const { mailboxId } = req.params;
+      let { mailboxId } = req.params;
       const { page = "1", limit = "50" } = req.query;
+
+      // Default to INBOX if mailboxId is empty
+      if (!mailboxId || mailboxId.trim() === "") {
+        mailboxId = "INBOX";
+      }
 
       if (!userId) {
         res.status(401).json({
@@ -47,10 +187,9 @@ router.get(
             limitNum
           );
 
-          // Fetch full details for each message
+          // Fetch or create emails from DB with AI summaries
           const emailPromises = (result.messages || []).map(async (msg) => {
-            const fullMessage = await gmailService.getMessage(userId, msg.id!);
-            return parseGmailMessage(fullMessage, userId, mailboxId);
+            return getOrCreateEmailFromGmail(userId, msg.id!, mailboxId);
           });
 
           const mailboxEmails = await Promise.all(emailPromises);
@@ -575,6 +714,514 @@ router.get(
       res.status(500).json({
         success: false,
         message: "Failed to download attachment",
+      });
+    }
+  }
+);
+
+// PATCH /api/emails/:id/status - Update email status for Kanban workflow
+router.patch(
+  "/emails/:id/status",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.userId;
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      const validStatuses: EmailStatus[] = ["inbox", "todo", "done", "snoozed"];
+      if (!validStatuses.includes(status)) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid status. Must be one of: inbox, todo, done, snoozed",
+        });
+        return;
+      }
+
+      // Try to find email in MongoDB
+      let emailDoc = await EmailModel.findOne({
+        emailId: id,
+        userId: userId,
+      });
+
+      // If not in DB, fetch from Gmail and create
+      if (!emailDoc) {
+        const hasGmailToken = tokenStore.hasToken(userId);
+
+        if (hasGmailToken) {
+          try {
+            // Use helper to fetch and save
+            const email = await getOrCreateEmailFromGmail(userId, id, "INBOX");
+
+            // Update the status immediately
+            emailDoc = await EmailModel.findOne({
+              emailId: id,
+              userId: userId,
+            });
+          } catch (error) {
+            console.error("Failed to fetch Gmail email:", error);
+            res.status(404).json({
+              success: false,
+              message: "Email not found",
+            });
+            return;
+          }
+        } else {
+          res.status(404).json({
+            success: false,
+            message: "Email not found",
+          });
+          return;
+        }
+      }
+
+      if (!emailDoc) {
+        res.status(404).json({
+          success: false,
+          message: "Email not found",
+        });
+        return;
+      }
+
+      // Update status in MongoDB
+      emailDoc.status = status;
+      if (status !== "snoozed") {
+        emailDoc.snoozeUntil = null;
+      }
+      await emailDoc.save();
+
+      // Convert to Email type for response
+      const updatedEmail: Email = {
+        id: emailDoc.emailId,
+        userId: emailDoc.userId,
+        mailboxId: emailDoc.mailboxId || "INBOX",
+        from: {
+          name: emailDoc.from.name || emailDoc.from.email,
+          email: emailDoc.from.email,
+        },
+        to: emailDoc.to.map((addr) => ({
+          name: addr.name || addr.email,
+          email: addr.email,
+        })),
+        cc: (emailDoc.cc || []).map((addr) => ({
+          name: addr.name || addr.email,
+          email: addr.email,
+        })),
+        subject: emailDoc.subject,
+        body: emailDoc.body,
+        preview: emailDoc.bodySnippet || emailDoc.body.substring(0, 150),
+        timestamp: emailDoc.timestamp.toISOString(),
+        isRead: emailDoc.isRead,
+        isStarred: emailDoc.isStarred,
+        attachments: emailDoc.attachments.map((att) => ({
+          id: att.attachmentId,
+          name: att.filename,
+          size: att.size.toString(),
+          type: att.mimeType,
+        })),
+        status: emailDoc.status,
+        summary: null, // Summary not persisted
+        snoozeUntil: emailDoc.snoozeUntil?.toISOString() || null,
+        gmailLink: `https://mail.google.com/mail/u/0/#inbox/${emailDoc.emailId}`,
+      };
+
+      res.json({
+        success: true,
+        data: updatedEmail,
+      });
+    } catch (error) {
+      console.error("Update email status error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+);
+
+// POST /api/emails/:id/snooze - Snooze an email until a specific time
+router.post(
+  "/emails/:id/snooze",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.userId;
+      const { id } = req.params;
+      const { snoozeUntil } = req.body;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      if (!snoozeUntil) {
+        res.status(400).json({
+          success: false,
+          message: "snoozeUntil date is required",
+        });
+        return;
+      }
+
+      const snoozeDate = new Date(snoozeUntil);
+      if (isNaN(snoozeDate.getTime()) || snoozeDate <= new Date()) {
+        res.status(400).json({
+          success: false,
+          message: "snoozeUntil must be a valid future date",
+        });
+        return;
+      }
+
+      // Find email in MongoDB
+      const emailDoc = await EmailModel.findOne({
+        emailId: id,
+        userId: userId,
+      });
+
+      if (!emailDoc) {
+        res.status(404).json({
+          success: false,
+          message: "Email not found",
+        });
+        return;
+      }
+
+      // Update snooze in MongoDB
+      emailDoc.status = "snoozed";
+      emailDoc.snoozeUntil = snoozeDate;
+      await emailDoc.save();
+
+      // Convert to Email type for response
+      const updatedEmail: Email = {
+        id: emailDoc.emailId,
+        userId: emailDoc.userId,
+        mailboxId: emailDoc.mailboxId || "INBOX",
+        from: {
+          name: emailDoc.from.name || emailDoc.from.email,
+          email: emailDoc.from.email,
+        },
+        to: emailDoc.to.map((addr) => ({
+          name: addr.name || addr.email,
+          email: addr.email,
+        })),
+        cc: (emailDoc.cc || []).map((addr) => ({
+          name: addr.name || addr.email,
+          email: addr.email,
+        })),
+        subject: emailDoc.subject,
+        body: emailDoc.body,
+        preview: emailDoc.bodySnippet || emailDoc.body.substring(0, 150),
+        timestamp: emailDoc.timestamp.toISOString(),
+        isRead: emailDoc.isRead,
+        isStarred: emailDoc.isStarred,
+        attachments: emailDoc.attachments.map((att) => ({
+          id: att.attachmentId,
+          name: att.filename,
+          size: att.size.toString(),
+          type: att.mimeType,
+        })),
+        status: emailDoc.status,
+        summary: null, // Summary not persisted
+        snoozeUntil: emailDoc.snoozeUntil?.toISOString() || null,
+        gmailLink: `https://mail.google.com/mail/u/0/#inbox/${emailDoc.emailId}`,
+      };
+
+      res.json({
+        success: true,
+        data: updatedEmail,
+        message: `Email snoozed until ${snoozeDate.toLocaleString()}`,
+      });
+    } catch (error) {
+      console.error("Snooze email error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+);
+
+// POST /api/emails/:id/summarize - Generate AI summary for an email (on-demand)
+router.post(
+  "/emails/:id/summarize",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.userId;
+      const { id } = req.params;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      // Try to find email in MongoDB first
+      let email = null;
+      let emailDoc = null;
+
+      try {
+        emailDoc = await EmailModel.findOne({
+          emailId: id,
+          userId: userId,
+        });
+
+        if (emailDoc) {
+          email = {
+            id: emailDoc.emailId,
+            subject: emailDoc.subject,
+            body: emailDoc.body,
+          };
+        }
+      } catch (error) {
+        console.warn("MongoDB query failed, falling back to in-memory:", error);
+      }
+
+      // Fallback to in-memory emails
+      if (!email) {
+        const emailIndex = emails.findIndex(
+          (e) => e.id === id && e.userId === userId
+        );
+
+        if (emailIndex === -1) {
+          res.status(404).json({
+            success: false,
+            message: "Email not found",
+          });
+          return;
+        }
+
+        email = emails[emailIndex];
+      }
+
+      // Generate summary using AI (ephemeral - not saved to DB)
+      console.log(`Generating AI summary for email ${id}...`);
+      const summary = await aiSummarization.generateSummary(
+        email.body,
+        email.subject
+      );
+
+      console.log(`✓ Summary generated for email ${id} (not persisted)`);
+
+      // Return summary without saving to database
+      res.json({
+        success: true,
+        data: {
+          id: email.id,
+          summary,
+        },
+      });
+    } catch (error) {
+      console.error("Summarize email error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to generate summary. Please try again.",
+      });
+    }
+  }
+);
+
+// POST /api/emails/batch-summarize - Generate summaries for multiple emails
+router.post(
+  "/emails/batch-summarize",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.userId;
+      const { emailIds } = req.body;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      if (!Array.isArray(emailIds) || emailIds.length === 0) {
+        res.status(400).json({
+          success: false,
+          message: "emailIds array is required",
+        });
+        return;
+      }
+
+      // Try to find emails in MongoDB
+      let emailDocs = [];
+      try {
+        emailDocs = await EmailModel.find({
+          emailId: { $in: emailIds },
+          userId: userId,
+        });
+      } catch (error) {
+        console.warn("MongoDB query failed for batch-summarize:", error);
+        res.status(500).json({
+          success: false,
+          message: "Database error. Please ensure MongoDB is running.",
+        });
+        return;
+      }
+
+      if (emailDocs.length === 0) {
+        res.status(404).json({
+          success: false,
+          message: "No emails found in database",
+        });
+        return;
+      }
+
+      // Generate summaries in batch (ephemeral - not saved to DB)
+      const summaries = await aiSummarization.batchSummarize(
+        emailDocs.map((doc) => ({ body: doc.body, subject: doc.subject }))
+      );
+
+      // Return summaries without saving to database
+      const results = emailDocs.map((doc, index) => ({
+        id: doc.emailId,
+        summary: summaries[index],
+      }));
+
+      console.log(`✓ Generated ${results.length} summaries (not persisted)`);
+
+      res.json({
+        success: true,
+        data: results,
+      });
+    } catch (error) {
+      console.error("Batch summarize error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+);
+
+// GET /api/emails/by-status/:status - Get emails by status (for Kanban view)
+router.get(
+  "/emails/by-status/:status",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.userId;
+      const { status } = req.params;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      const validStatuses: EmailStatus[] = ["inbox", "todo", "done", "snoozed"];
+      if (!validStatuses.includes(status as EmailStatus)) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid status",
+        });
+        return;
+      }
+
+      // Auto-expire snoozed emails that have passed their snoozeUntil time
+      try {
+        const result = await EmailModel.updateMany(
+          {
+            userId: userId,
+            status: "snoozed",
+            snoozeUntil: { $lt: new Date() },
+          },
+          {
+            $set: {
+              status: "inbox",
+              snoozeUntil: null,
+            },
+          }
+        );
+
+        if (result.modifiedCount > 0) {
+          console.log(
+            `✓ Auto-expired ${result.modifiedCount} snoozed email(s) back to inbox for user ${userId}`
+          );
+        }
+      } catch (error) {
+        console.warn("Failed to auto-expire snoozes:", error);
+        // Continue even if auto-expire fails
+      }
+
+      // Query MongoDB for emails with this status
+      let dbEmails = [];
+      try {
+        dbEmails = await EmailModel.find({
+          userId: userId,
+          status: status,
+        })
+          .sort({ timestamp: -1 })
+          .limit(100);
+      } catch (error) {
+        console.warn(
+          "MongoDB query failed for by-status, returning empty:",
+          error
+        );
+        // Return empty array if MongoDB not available
+        res.json({
+          success: true,
+          data: [],
+        });
+        return;
+      }
+
+      // Convert to Email type
+      const emailsData: Email[] = dbEmails.map((doc) => ({
+        id: doc.emailId,
+        userId: doc.userId,
+        mailboxId: doc.mailboxId || "INBOX",
+        from: {
+          name: doc.from.name || doc.from.email,
+          email: doc.from.email,
+        },
+        to: doc.to.map((addr) => ({
+          name: addr.name || addr.email,
+          email: addr.email,
+        })),
+        cc: (doc.cc || []).map((addr) => ({
+          name: addr.name || addr.email,
+          email: addr.email,
+        })),
+        subject: doc.subject,
+        body: doc.body,
+        preview: doc.bodySnippet || doc.body.substring(0, 150),
+        timestamp: doc.timestamp.toISOString(),
+        isRead: doc.isRead,
+        isStarred: doc.isStarred,
+        attachments: doc.attachments.map((att) => ({
+          id: att.attachmentId,
+          name: att.filename,
+          size: att.size.toString(),
+          type: att.mimeType,
+        })),
+        status: doc.status,
+        summary: null, // Summary is not persisted, generated on-demand only
+        snoozeUntil: doc.snoozeUntil?.toISOString() || null,
+        gmailLink: `https://mail.google.com/mail/u/0/#inbox/${doc.emailId}`,
+      }));
+
+      res.json({
+        success: true,
+        data: emailsData,
+      });
+    } catch (error) {
+      console.error("Get emails by status error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
       });
     }
   }

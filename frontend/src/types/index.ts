@@ -45,6 +45,8 @@ export interface Attachment {
   type: string;
 }
 
+export type EmailStatus = 'inbox' | 'todo' | 'done' | 'snoozed';
+
 export interface Email {
   id: string;
   mailboxId: string;
@@ -59,6 +61,10 @@ export interface Email {
   isStarred: boolean;
   timestamp: string;
   attachments: Attachment[];
+  status: EmailStatus;
+  snoozeUntil: string | null;
+  summary: string | null;
+  gmailLink: string | null;
 }
 
 export interface ApiError {

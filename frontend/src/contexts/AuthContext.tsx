@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import apiClient, {
@@ -21,13 +21,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
-};
+// Export AuthContext for useAuth hook
+export { AuthContext };
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -61,7 +56,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             name: payload.email.split("@")[0],
           };
           setUser(userData);
-        } catch (error) {
+        } catch {
           // Refresh failed, clear tokens
           clearTokens();
         }
@@ -83,9 +78,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(userData);
 
       navigate("/inbox");
-    } catch (error: any) {
+    } catch (error) {
+      const err = error as { response?: { data?: { message?: string } } };
       throw new Error(
-        error.response?.data?.message || "Login failed. Please try again."
+        err.response?.data?.message || "Login failed. Please try again."
       );
     }
   };
@@ -100,9 +96,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(userData);
 
       navigate("/inbox");
-    } catch (error: any) {
+    } catch (error) {
+      const err = error as { response?: { data?: { message?: string } } };
       throw new Error(
-        error.response?.data?.message ||
+        err.response?.data?.message ||
           "Google login failed. Please try again."
       );
     }
@@ -114,11 +111,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     navigate("/login");
   };
 
-  const setUserData = (userData: User) => {
-    console.log("[AuthContext] setUserData called with:", userData);
+  const setUserData = useCallback((userData: User) => {
     setUser(userData);
-    console.log("[AuthContext] User state updated");
-  };
+  }, []);
 
   const value: AuthContextType = {
     user,
