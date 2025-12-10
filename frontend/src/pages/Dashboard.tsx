@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/dashboard/Sidebar";
 import apiClient from "../api/axios";
 import type { Mailbox, Email } from "../types";

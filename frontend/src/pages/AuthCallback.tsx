@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { setAccessToken, setRefreshToken } from "../api/axios";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../hooks/useAuth";
 
 /**
  * OAuth Callback Page
@@ -19,10 +19,19 @@ const AuthCallback: React.FC = () => {
     "loading"
   );
   const [message, setMessage] = useState("Processing authentication...");
+  const hasProcessed = useRef(false);
 
   useEffect(() => {
+    // Prevent multiple executions
+    if (hasProcessed.current) {
+      return;
+    }
+
     const processAuth = async () => {
       try {
+        // Mark as processed immediately
+        hasProcessed.current = true;
+
         // Get tokens from URL parameters
         const accessToken = searchParams.get("accessToken");
         const refreshToken = searchParams.get("refreshToken");
@@ -31,14 +40,14 @@ const AuthCallback: React.FC = () => {
         if (error) {
           setStatus("error");
           setMessage(`Authentication failed: ${error}`);
-          setTimeout(() => navigate("/login"), 3000);
+          setTimeout(() => navigate("/login", { replace: true }), 3000);
           return;
         }
 
         if (!accessToken || !refreshToken) {
           setStatus("error");
           setMessage("Missing authentication tokens");
-          setTimeout(() => navigate("/login"), 3000);
+          setTimeout(() => navigate("/login", { replace: true }), 3000);
           return;
         }
 
@@ -54,26 +63,21 @@ const AuthCallback: React.FC = () => {
           name: payload.email.split("@")[0],
         };
 
-        console.log("[AuthCallback] Setting user data:", userData);
-
         // Set user data in auth context
         setUserData(userData);
-
-        console.log("[AuthCallback] User data set, preparing to navigate");
 
         setStatus("success");
         setMessage("Authentication successful! Redirecting...");
 
-        // Navigate immediately - ProtectedRoute will wait for loading state
+        // Navigate with replace to prevent back button issues
         setTimeout(() => {
-          console.log("[AuthCallback] Navigating to /inbox");
           navigate("/inbox", { replace: true });
-        }, 100);
-      } catch (err: any) {
+        }, 500);
+      } catch (err) {
         console.error("Auth callback error:", err);
         setStatus("error");
         setMessage("An error occurred during authentication");
-        setTimeout(() => navigate("/login"), 3000);
+        setTimeout(() => navigate("/login", { replace: true }), 3000);
       }
     };
 

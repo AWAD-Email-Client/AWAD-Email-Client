@@ -10,7 +10,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { Email, EmailStatus } from "../../types";
-import axios from "../../api/axios";
+import * as emailsAPI from "../../api/emails.api";
 
 interface KanbanBoardProps {
   mailboxId: string;
@@ -71,8 +71,14 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const fetchEmailsByStatus = useCallback(async () => {
     try {
       setLoading(true);
+      
+      // First, trigger a sync from Gmail to MongoDB by fetching mailbox emails
+      // This ensures MongoDB has the latest data before we query by status
+      await emailsAPI.fetchMailboxEmails(mailboxId, 1, 50);
+      
+      // Now fetch emails by status from MongoDB
       const statusPromises = columns.map((col) =>
-        axios.get(`/emails/by-status/${col.id}`)
+        emailsAPI.fetchEmailsByStatus(col.id)
       );
 
       const results = await Promise.all(statusPromises);
@@ -83,9 +89,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
         snoozed: [],
       };
 
-      results.forEach((result, index) => {
+      results.forEach((emails, index) => {
         const status = columns[index].id;
-        newEmailsByStatus[status] = result.data.data || [];
+        newEmailsByStatus[status] = emails;
       });
 
       // Generate summaries for emails that don't have one
@@ -96,13 +102,13 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
         if (emailsNeedingSummary.length > 0) {
           try {
-            const summaryResult = await axios.post("/emails/batch-summarize", {
-              emailIds: emailsNeedingSummary.map((e) => e.id),
-            });
+            const summaries = await emailsAPI.batchSummarizeEmails(
+              emailsNeedingSummary.map((e) => e.id)
+            );
 
             // Update emails with new summaries
             const summaryMap = new Map(
-              summaryResult.data.data.map((item: any) => [
+              summaries.map((item) => [
                 item.id,
                 item.summary,
               ])
@@ -110,7 +116,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
             newEmailsByStatus[status] = newEmailsByStatus[status].map((email) =>
               summaryMap.has(email.id)
-                ? { ...email, summary: summaryMap.get(email.id) }
+                ? { ...email, summary: summaryMap.get(email.id) as string }
                 : email
             );
           } catch (error) {
@@ -156,9 +162,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
     try {
       // Update status on backend
-      await axios.patch(`/emails/${draggingEmail.id}/status`, {
-        status: targetStatus,
-      });
+      await emailsAPI.updateEmailStatus(draggingEmail.id, targetStatus);
 
       // Update local state
       const sourceStatus = draggingEmail.status;
@@ -185,7 +189,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
       const snoozeUntil = new Date();
       snoozeUntil.setHours(snoozeUntil.getHours() + hours);
 
-      await axios.post(`/emails/${emailId}/snooze`, {
+      await emailsAPI.snoozeEmail(emailId, {
         snoozeUntil: snoozeUntil.toISOString(),
       });
 
@@ -331,7 +335,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
     try {
       setLoading(true);
       // Fetch inbox emails first to populate the board
-      await axios.get(`/mailboxes/${mailboxId}/emails?limit=50`);
+      await emailsAPI.fetchMailboxEmails(mailboxId, 1, 50);
       // Refresh the board
       await fetchEmailsByStatus();
     } catch (error) {

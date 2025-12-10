@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../hooks/useAuth";
 import { Mail, Lock, AlertCircle, Loader2 } from "lucide-react";
 import apiClient from "../api/axios";
 import type { FormEvent } from "react";
