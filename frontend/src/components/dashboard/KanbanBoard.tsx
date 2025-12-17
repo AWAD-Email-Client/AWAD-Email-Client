@@ -9,6 +9,8 @@ import {
   ExternalLink,
   Sparkles,
   Loader2,
+  Filter,
+  ArrowUpDown,
 } from "lucide-react";
 import type { Email, EmailStatus } from "../../types";
 import * as emailsAPI from "../../api/emails.api";
@@ -70,6 +72,11 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const [draggingEmail, setDraggingEmail] = useState<Email | null>(null);
   const [snoozeEmailId, setSnoozeEmailId] = useState<string | null>(null);
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
+
+  // F3: Filter & Sort State
+  const [sortBy, setSortBy] = useState<"newest" | "oldest">("newest");
+  const [filterUnread, setFilterUnread] = useState(false);
+  const [filterAttachments, setFilterAttachments] = useState(false);
 
   // Fetch emails grouped by status
   const fetchEmailsByStatus = useCallback(async () => {
@@ -275,18 +282,18 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           snoozed:
             sourceStatus === "snoozed"
               ? prev.snoozed.map((e) =>
-                  e.id === emailId
-                    ? { ...e, snoozeUntil: snoozeUntil.toISOString() }
-                    : e
-                )
+                e.id === emailId
+                  ? { ...e, snoozeUntil: snoozeUntil.toISOString() }
+                  : e
+              )
               : [
-                  ...prev.snoozed,
-                  {
-                    ...emailToSnooze,
-                    status: "snoozed",
-                    snoozeUntil: snoozeUntil.toISOString(),
-                  },
-                ],
+                ...prev.snoozed,
+                {
+                  ...emailToSnooze,
+                  status: "snoozed",
+                  snoozeUntil: snoozeUntil.toISOString(),
+                },
+              ],
         };
       });
 
@@ -429,6 +436,30 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
     </div>
   );
 
+  // F3: Apply filters and sorting to emails in a column
+  const getFilteredAndSortedEmails = (emails: Email[]): Email[] => {
+    let filtered = [...emails];
+
+    // Apply filters
+    if (filterUnread) {
+      filtered = filtered.filter(email => !email.isRead);
+    }
+
+    if (filterAttachments) {
+      filtered = filtered.filter(email => email.attachments && email.attachments.length > 0);
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      const dateA = new Date(a.timestamp).getTime();
+      const dateB = new Date(b.timestamp).getTime();
+
+      return sortBy === "newest" ? dateB - dateA : dateA - dateB;
+    });
+
+    return filtered;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -471,6 +502,58 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
     <div className="h-full overflow-hidden bg-gray-50">
       <div className="p-4 border-b border-gray-200 bg-white">
         <div className="flex items-center justify-between">
+          {/* F3: Filter & Sort Controls */}
+          <div className="flex items-center gap-4">
+            {/* Sort Dropdown */}
+            <div className="flex items-center gap-2">
+              <ArrowUpDown className="w-4 h-4 text-gray-500" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as "newest" | "oldest")}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              >
+                <option value="newest">Date: Newest First</option>
+                <option value="oldest">Date: Oldest First</option>
+              </select>
+            </div>
+
+            {/* Filter Buttons */}
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-500" />
+              <button
+                onClick={() => setFilterUnread(!filterUnread)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${filterUnread
+                    ? "bg-primary-600 text-white"
+                    : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                  }`}
+              >
+                Unread Only
+              </button>
+              <button
+                onClick={() => setFilterAttachments(!filterAttachments)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${filterAttachments
+                    ? "bg-primary-600 text-white"
+                    : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                  }`}
+              >
+                Has Attachments
+              </button>
+
+              {/* Clear Filters */}
+              {(filterUnread || filterAttachments) && (
+                <button
+                  onClick={() => {
+                    setFilterUnread(false);
+                    setFilterAttachments(false);
+                  }}
+                  className="px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                >
+                  Clear Filters
+                </button>
+              )}
+            </div>
+          </div>
+
           {!loading && (
             <button
               onClick={fetchEmailsByStatus}
@@ -524,22 +607,35 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     {column.title}
                   </h3>
                   <p className="text-xs text-gray-600">
-                    {emailsByStatus[column.id].length} emails
+                    {(() => {
+                      const filtered = getFilteredAndSortedEmails(emailsByStatus[column.id]);
+                      const total = emailsByStatus[column.id].length;
+                      return filtered.length !== total
+                        ? `${filtered.length} of ${total} emails`
+                        : `${total} emails`;
+                    })()}
                   </p>
                 </div>
               </div>
 
               {/* Email Cards */}
               <div className="flex-1 space-y-3 overflow-y-auto scrollbar-thin">
-                {emailsByStatus[column.id].length === 0 ? (
-                  <div className="text-center py-8 text-gray-400 text-sm">
-                    No emails in this column
-                  </div>
-                ) : (
-                  emailsByStatus[column.id].map((email) => (
-                    <EmailCard key={email.id} email={email} />
-                  ))
-                )}
+                {(() => {
+                  // F3: Apply filters and sorting
+                  const filteredSortedEmails = getFilteredAndSortedEmails(emailsByStatus[column.id]);
+
+                  return filteredSortedEmails.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400 text-sm">
+                      {emailsByStatus[column.id].length === 0
+                        ? "No emails in this column"
+                        : "No emails match current filters"}
+                    </div>
+                  ) : (
+                    filteredSortedEmails.map((email) => (
+                      <EmailCard key={email.id} email={email} />
+                    ))
+                  );
+                })()}
               </div>
             </div>
           ))}

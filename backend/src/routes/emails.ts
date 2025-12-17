@@ -8,11 +8,130 @@ import tokenStore from "../services/tokenStore";
 import { parseGmailMessage, createRawEmail } from "../utils/emailParser";
 import aiSummarization from "../services/aiSummarization";
 import EmailModel from "../models/Email";
+import Fuse from "fuse.js";
 
 const router = express.Router();
 
 // Apply auth middleware to all routes
 router.use(authMiddleware);
+
+/**
+ * F1: Fuzzy Search Endpoint
+ * GET /api/search?q=query
+ * Searches across subject, sender name/email, and body with typo tolerance and partial matching
+ * IMPORTANT: Must be defined BEFORE /emails/:id to avoid route conflict
+ */
+router.get("/search", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+    const query = req.query.q as string;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+      return;
+    }
+
+    if (!query || query.trim() === "") {
+      res.json({
+        success: true,
+        data: [],
+        message: "No search query provided",
+      });
+      return;
+    }
+
+    console.log(`Fuzzy search - userId: ${userId}, query: "${query}"`);
+
+    // Fetch all emails for the user from MongoDB
+    const allEmails = await EmailModel.find({ userId: userId });
+
+    console.log(
+      `Found ${allEmails.length} total emails in MongoDB for user ${userId}`
+    );
+
+    if (allEmails.length === 0) {
+      res.json({
+        success: true,
+        data: [],
+        message: "No emails found in database. Please sync emails first.",
+      });
+      return;
+    }
+
+    // Transform to Email format for searching
+    const emailsToSearch = allEmails.map((doc) => ({
+      id: doc.emailId,
+      mailboxId: doc.mailboxId || "inbox-1",
+      userId: doc.userId,
+      from: doc.from,
+      to: doc.to,
+      cc: doc.cc || [],
+      subject: doc.subject,
+      body: doc.body,
+      preview: doc.bodySnippet || doc.body.substring(0, 150),
+      timestamp: doc.timestamp.toISOString(),
+      isRead: doc.isRead,
+      isStarred: doc.isStarred,
+      attachments: doc.attachments.map((att) => ({
+        id: att.attachmentId,
+        name: att.filename,
+        size: att.size.toString(),
+        type: att.mimeType,
+      })),
+      status: doc.status,
+      summary: null,
+      snoozeUntil: doc.snoozeUntil?.toISOString() || null,
+      gmailLink: `https://mail.google.com/mail/u/0/#inbox/${doc.emailId}`,
+    }));
+
+    // Configure Fuse.js for fuzzy search
+    const fuseOptions = {
+      keys: [
+        { name: "subject", weight: 3 }, // Subject has highest priority
+        { name: "from.name", weight: 2 }, // Sender name
+        { name: "from.email", weight: 2 }, // Sender email
+        { name: "body", weight: 1 }, // Body has lowest priority
+        { name: "preview", weight: 1.5 }, // Preview snippet
+      ],
+      threshold: 0.4, // 0.0 = exact match, 1.0 = match anything (0.4 is good for typo tolerance)
+      distance: 100, // Maximum distance between characters
+      minMatchCharLength: 2, // Minimum 2 characters to match
+      includeScore: true, // Include relevance score
+      ignoreLocation: true, // Don't care about position in string
+      useExtendedSearch: false,
+    };
+
+    // Create Fuse instance and search
+    const fuse = new Fuse(emailsToSearch, fuseOptions);
+    const searchResults = fuse.search(query);
+
+    console.log(
+      `Fuzzy search found ${searchResults.length} results for query "${query}"`
+    );
+
+    // Extract and sort results by relevance (lower score = better match)
+    const rankedResults = searchResults
+      .sort((a, b) => (a.score || 0) - (b.score || 0))
+      .map((result) => result.item);
+
+    res.json({
+      success: true,
+      data: rankedResults,
+      count: rankedResults.length,
+      query: query,
+    });
+  } catch (error) {
+    console.error("Fuzzy search error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error during search",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
 
 /**
  * Helper function to get email from DB or fetch from Gmail and save with AI summary

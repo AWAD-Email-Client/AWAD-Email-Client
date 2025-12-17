@@ -98,7 +98,7 @@ const EmailDetail: React.FC<EmailDetailProps> = ({
 
   if (!email) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-8">
+      <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-8 min-w-0">
         <Mail className="w-24 h-24 text-gray-300 mb-4" />
         <p className="text-lg font-medium text-gray-600">No email selected</p>
         <p className="text-sm text-gray-400 mt-1">
@@ -111,7 +111,7 @@ const EmailDetail: React.FC<EmailDetailProps> = ({
   const sanitizedBody = DOMPurify.sanitize(email.body);
 
   return (
-    <div className="flex-1 flex flex-col bg-white overflow-hidden">
+    <div className="flex-1 flex flex-col bg-white overflow-hidden min-w-0">
       {/* Header */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-start justify-between mb-4">

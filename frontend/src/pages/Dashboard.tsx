@@ -7,7 +7,8 @@ import EmailDetail from "../components/dashboard/EmailDetail";
 import EmailList from "../components/dashboard/EmailList";
 import ComposeEmail from "../components/dashboard/ComposeEmail";
 import KanbanBoard from "../components/dashboard/KanbanBoard";
-import { LayoutGrid, List } from "lucide-react";
+import SearchResults from "../components/dashboard/SearchResults";
+import { LayoutGrid, List, Search } from "lucide-react";
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -24,6 +25,13 @@ const Dashboard: React.FC = () => {
     replyAll?: boolean;
     forward?: boolean;
   }>({});
+
+  // F2: Search state
+  const [searchMode, setSearchMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Email[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   // Fetch mailboxes on mount
   useEffect(() => {
@@ -153,6 +161,37 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // F2: Handle fuzzy search
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+
+    setSearchMode(true);
+    setSearchLoading(true);
+    setSearchError(null);
+
+    try {
+      console.log('Searching for:', searchQuery);
+      const response = await apiClient.get(`/search?q=${encodeURIComponent(searchQuery)}`);
+      console.log('Search response:', response.data);
+      setSearchResults(response.data.data || []);
+    } catch (error) {
+      console.error("Search error:", error);
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setSearchError(errorMessage || "Failed to search emails");
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleCloseSearch = () => {
+    setSearchMode(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError(null);
+  };
+
   const handleCompose = () => {
     setComposeMode({});
     setComposeOpen(true);
@@ -206,12 +245,12 @@ const Dashboard: React.FC = () => {
         return newSummary; // Return summary for KanbanBoard to use
       }
       return null;
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to generate summary:", error);
-      alert(
-        error.response?.data?.message ||
-          "Failed to generate summary. Please try again."
-      );
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      alert(errorMessage || "Failed to generate summary. Please try again.");
       return null;
     }
   };
@@ -238,26 +277,41 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {/* F2: Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search emails (fuzzy)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && searchQuery.trim()) {
+                  handleSearch();
+                }
+              }}
+              className="w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+            />
+          </div>
+
           {/* View Mode Toggle */}
           <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => setViewMode("list")}
-              className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                viewMode === "list"
+              className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === "list"
                   ? "bg-white text-gray-900 shadow-sm"
                   : "text-gray-600 hover:text-gray-900"
-              }`}
+                }`}
             >
               <List className="w-4 h-4" />
               List
             </button>
             <button
               onClick={() => setViewMode("kanban")}
-              className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                viewMode === "kanban"
+              className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === "kanban"
                   ? "bg-white text-gray-900 shadow-sm"
                   : "text-gray-600 hover:text-gray-900"
-              }`}
+                }`}
             >
               <LayoutGrid className="w-4 h-4" />
               Kanban
@@ -275,7 +329,29 @@ const Dashboard: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {viewMode === "kanban" ? (
+        {searchMode ? (
+          /* F2: Search Results View */
+          <>
+            <SearchResults
+              query={searchQuery}
+              results={searchResults}
+              loading={searchLoading}
+              error={searchError}
+              onSelectEmail={handleEmailSelect}
+              onClose={handleCloseSearch}
+            />
+
+            {/* Email Detail Panel */}
+            <EmailDetail
+              email={selectedEmail}
+              onToggleStar={handleToggleStar}
+              onDelete={handleDeleteEmail}
+              onReply={handleReply}
+              onForward={handleForward}
+              onEmailUpdate={handleEmailUpdate}
+            />
+          </>
+        ) : viewMode === "kanban" ? (
           /* Kanban View - Full Width - Shows all emails by status */
           <div className="flex-1 overflow-hidden">
             <KanbanBoard
@@ -331,8 +407,8 @@ const Dashboard: React.FC = () => {
         forward={composeMode.forward}
       />
 
-      {/* Email Detail Modal for Kanban View */}
-      {viewMode === "kanban" && selectedEmail && (
+      {/* Email Detail Modal for Kanban View (not in search mode) */}
+      {viewMode === "kanban" && !searchMode && selectedEmail && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedEmail(null)}

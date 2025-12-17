@@ -101,7 +101,7 @@ const EmailList: React.FC<EmailListProps> = ({
   );
 
   return (
-    <div className="flex-1 flex flex-col bg-white border-r border-gray-200">
+    <div className="flex-1 flex flex-col bg-white border-r border-gray-200 min-w-0">
       {/* Header Actions */}
       <div className="p-4 border-b border-gray-200 space-y-3">
         {/* Search Bar */}
