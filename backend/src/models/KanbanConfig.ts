@@ -1,7 +1,8 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface KanbanColumn {
-  id: string; // Column identifier (e.g., "inbox", "todo", custom IDs)
+  id: string; // Auto-generated UUID for React keys
+  status: string; // Semantic identifier for email categorization (e.g., "inbox", "todo", "trash")
   title: string; // Display title
   color: string; // Tailwind color class (e.g., "bg-blue-500")
   icon: string; // Icon name from lucide-react (e.g., "Inbox", "Clock")
@@ -19,6 +20,7 @@ export interface IKanbanConfig extends Document {
 const KanbanColumnSchema = new Schema(
   {
     id: { type: String, required: true },
+    status: { type: String, required: true }, // Semantic identifier for email status
     title: { type: String, required: true },
     color: { type: String, required: true },
     icon: { type: String, required: true },
@@ -41,7 +43,8 @@ const KanbanConfigSchema = new Schema<IKanbanConfig>(
       required: true,
       default: [
         {
-          id: "inbox",
+          id: "col-inbox",
+          status: "inbox",
           title: "Inbox",
           color: "bg-blue-500",
           icon: "Inbox",
@@ -49,7 +52,8 @@ const KanbanConfigSchema = new Schema<IKanbanConfig>(
           order: 0,
         },
         {
-          id: "todo",
+          id: "col-todo",
+          status: "todo",
           title: "To Do",
           color: "bg-yellow-500",
           icon: "Clock",
@@ -57,7 +61,8 @@ const KanbanConfigSchema = new Schema<IKanbanConfig>(
           order: 1,
         },
         {
-          id: "done",
+          id: "col-done",
+          status: "done",
           title: "Done",
           color: "bg-green-500",
           icon: "CheckCircle",
@@ -65,7 +70,8 @@ const KanbanConfigSchema = new Schema<IKanbanConfig>(
           order: 2,
         },
         {
-          id: "snoozed",
+          id: "col-snoozed",
+          status: "snoozed",
           title: "Snoozed",
           color: "bg-purple-500",
           icon: "Clock",

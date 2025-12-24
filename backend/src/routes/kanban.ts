@@ -85,11 +85,15 @@ router.get("/config", async (req: Request, res: Response): Promise<void> => {
 /**
  * PUT /api/kanban/config
  * Update user's Kanban configuration
+ * Also handles email status migration when column statuses change
  */
 router.put("/config", async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user?.userId;
-    const { columns } = req.body as { columns: KanbanColumn[] };
+    const { columns, statusMigrations } = req.body as {
+      columns: KanbanColumn[];
+      statusMigrations?: Record<string, string>; // { oldStatus: newStatus }
+    };
 
     if (!userId) {
       res.status(401).json({
@@ -115,6 +119,24 @@ router.put("/config", async (req: Request, res: Response): Promise<void> => {
           message: "Each column must have id, title, color, and icon",
         });
         return;
+      }
+    }
+
+    // If statusMigrations provided, update emails with old statuses
+    if (statusMigrations && Object.keys(statusMigrations).length > 0) {
+      console.log("🔄 Migrating email statuses:", statusMigrations);
+
+      const EmailModel = (await import("../models/Email")).default;
+
+      for (const [oldStatus, newStatus] of Object.entries(statusMigrations)) {
+        const result = await EmailModel.updateMany(
+          { userId, status: oldStatus },
+          { $set: { status: newStatus } }
+        );
+
+        console.log(
+          `✓ Migrated ${result.modifiedCount} emails: "${oldStatus}" → "${newStatus}"`
+        );
       }
     }
 

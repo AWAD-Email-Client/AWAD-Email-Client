@@ -47,7 +47,8 @@ interface KanbanBoardProps {
 }
 
 interface Column {
-  id: string;
+  id: string; // React key (UUID)
+  status: string; // Email status identifier
   title: string;
   icon: React.ReactNode;
   color: string;
@@ -82,16 +83,17 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           .sort((a, b) => a.order - b.order)
           .map((col) => ({
             id: col.id,
+            status: col.status,
             title: col.title,
             icon: ICON_MAP[col.icon] || <Inbox className="w-5 h-5" />,
             color: col.color,
           }));
         setColumns(loadedColumns);
 
-        // Initialize emailsByStatus with empty arrays for each column
+        // Initialize emailsByStatus with empty arrays for each status
         const initialEmails: Record<string, Email[]> = {};
         loadedColumns.forEach((col) => {
-          initialEmails[col.id] = [];
+          initialEmails[col.status] = [];
         });
         setEmailsByStatus(initialEmails);
       } catch (error) {
@@ -99,19 +101,22 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
         // Fallback to default columns
         const defaultColumns: Column[] = [
           {
-            id: "inbox",
+            id: "col-inbox",
+            status: "inbox",
             title: "Inbox",
             icon: <Inbox className="w-5 h-5" />,
             color: "bg-blue-500",
           },
           {
-            id: "todo",
+            id: "col-todo",
+            status: "todo",
             title: "To Do",
             icon: <Clock className="w-5 h-5" />,
             color: "bg-yellow-500",
           },
           {
-            id: "done",
+            id: "col-done",
+            status: "done",
             title: "Done",
             icon: <CheckCircle className="w-5 h-5" />,
             color: "bg-green-500",
@@ -154,14 +159,14 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
       // Now fetch emails by status from MongoDB
       const statusPromises = columns.map((col) =>
-        emailsAPI.fetchEmailsByStatus(col.id as EmailStatus)
+        emailsAPI.fetchEmailsByStatus(col.status as EmailStatus)
       );
 
       const results = await Promise.all(statusPromises);
       const newEmailsByStatus: Record<string, Email[]> = {};
 
       results.forEach((emails, index) => {
-        const status = columns[index].id;
+        const status = columns[index].status;
         newEmailsByStatus[status] = emails;
       });
 
@@ -673,7 +678,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
               key={column.id}
               className="flex flex-col flex-1 bg-gray-100 rounded-lg p-4"
               onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(column.id, e)}
+              onDrop={(e) => handleDrop(column.status, e)}
             >
               {/* Column Header */}
               <div className="flex items-center gap-2 mb-4">
@@ -687,9 +692,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                   <p className="text-xs text-gray-600">
                     {(() => {
                       const filtered = getFilteredAndSortedEmails(
-                        emailsByStatus[column.id]
+                        emailsByStatus[column.status]
                       );
-                      const total = emailsByStatus[column.id].length;
+                      const total = emailsByStatus[column.status].length;
                       return filtered.length !== total
                         ? `${filtered.length} of ${total} emails`
                         : `${total} emails`;
@@ -703,12 +708,12 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 {(() => {
                   // F3: Apply filters and sorting
                   const filteredSortedEmails = getFilteredAndSortedEmails(
-                    emailsByStatus[column.id]
+                    emailsByStatus[column.status]
                   );
 
                   return filteredSortedEmails.length === 0 ? (
                     <div className="text-center py-8 text-gray-400 text-sm">
-                      {emailsByStatus[column.id].length === 0
+                      {emailsByStatus[column.status].length === 0
                         ? "No emails in this column"
                         : "No emails match current filters"}
                     </div>

@@ -55,12 +55,77 @@ const GMAIL_LABELS = [
   { value: "", label: "None" },
 ];
 
+/**
+ * Generate a slug from a title or Gmail label for use as status identifier
+ * Example: "Sent Mail" -> "sent-mail", "INBOX" -> "inbox"
+ */
+const generateSlugFromTitle = (title: string): string => {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "") // Remove special characters
+    .replace(/\s+/g, "-") // Replace spaces with hyphens
+    .replace(/-+/g, "-") // Replace multiple hyphens with single
+    .replace(/^-|-$/g, ""); // Remove leading/trailing hyphens
+};
+
+/**
+ * Generate a unique status identifier from Gmail label or title
+ * Priority: Gmail label > Title
+ */
+const generateUniqueStatus = (
+  gmailLabel: string | undefined,
+  title: string,
+  columns: KanbanColumn[],
+  excludeId?: string
+): string => {
+  // Priority 1: Use Gmail label if available
+  const baseStatus = gmailLabel
+    ? generateSlugFromTitle(gmailLabel)
+    : generateSlugFromTitle(title);
+
+  // Check if status is unique
+  let status = baseStatus;
+  let counter = 1;
+
+  while (columns.some((col) => col.status === status && col.id !== excludeId)) {
+    status = `${baseStatus}-${counter}`;
+    counter++;
+  }
+
+  return status;
+};
+
+/**
+ * Generate a UUID for column ID (React key purposes only)
+ */
+const generateColumnId = (): string => {
+  return `col-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+};
+
+/**
+ * Check if a Gmail label is already used by another column
+ */
+const isGmailLabelUsed = (
+  gmailLabel: string,
+  columns: KanbanColumn[],
+  excludeColumnId?: string
+): boolean => {
+  return columns.some(
+    (col) => col.gmailLabel === gmailLabel && col.id !== excludeColumnId
+  );
+};
+
 const KanbanSettings: React.FC<KanbanSettingsProps> = ({
   isOpen,
   onClose,
   onConfigUpdated,
 }) => {
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
+  const [originalStatuses, setOriginalStatuses] = useState<
+    Record<string, string>
+  >({}); // Track original statuses for migration
+  const [migrationMap, setMigrationMap] = useState<Record<string, string>>({}); // Track id→status migrations
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +140,29 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
     try {
       setLoading(true);
       const config = await getKanbanConfig();
-      setColumns(config.columns.sort((a, b) => a.order - b.order));
+      const sortedColumns = config.columns.sort((a, b) => a.order - b.order);
+
+      // Migration: Add status field for old columns that don't have it
+      const migratedColumns = sortedColumns.map((col) => {
+        if (!col.status) {
+          // Copy current id to status, generate new UUID for id
+          return {
+            ...col,
+            status: col.id,
+            id: generateColumnId(),
+          };
+        }
+        return col;
+      });
+
+      // Store original statuses for migration tracking
+      const statuses: Record<string, string> = {};
+      migratedColumns.forEach((col) => {
+        statuses[col.id] = col.status;
+      });
+      setOriginalStatuses(statuses);
+
+      setColumns(migratedColumns);
     } catch (error) {
       console.error("Failed to load Kanban config:", error);
       setError("Failed to load configuration");
@@ -95,7 +182,19 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
         order: index,
       }));
 
-      await updateKanbanConfig(orderedColumns);
+      // Build status migration map: { oldStatus: newStatus }
+      const statusMigrations: Record<string, string> = {};
+      orderedColumns.forEach((col) => {
+        const originalStatus = originalStatuses[col.id];
+        if (originalStatus && originalStatus !== col.status) {
+          statusMigrations[originalStatus] = col.status;
+          console.log(
+            `📝 Status migration: "${originalStatus}" → "${col.status}"`
+          );
+        }
+      });
+
+      await updateKanbanConfig(orderedColumns, statusMigrations);
       onConfigUpdated();
       onClose();
     } catch (error) {
@@ -107,8 +206,10 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
   };
 
   const handleAddColumn = () => {
+    const newColumnId = generateColumnId();
     const newColumn: KanbanColumn = {
-      id: `custom-${Date.now()}`,
+      id: newColumnId,
+      status: `new-status-${Date.now()}`, // Temporary, will be updated on save
       title: "New Column",
       color: "bg-blue-500",
       icon: "Inbox",
@@ -133,10 +234,38 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
     field: keyof KanbanColumn,
     value: any
   ) => {
+    // Validate Gmail label uniqueness
+    if (field === "gmailLabel" && value && value !== "") {
+      if (isGmailLabelUsed(value, columns, columnId)) {
+        alert(
+          `Gmail label "${value}" is already used by another column. Each Gmail label can only be mapped to one column.`
+        );
+        return;
+      }
+    }
+
     setColumns(
-      columns.map((col) =>
-        col.id === columnId ? { ...col, [field]: value } : col
-      )
+      columns.map((col) => {
+        if (col.id === columnId) {
+          const updatedCol = { ...col, [field]: value };
+
+          // If updating Gmail label or title, regenerate status
+          if (field === "gmailLabel" || field === "title") {
+            const newGmailLabel =
+              field === "gmailLabel" ? value : col.gmailLabel;
+            const newTitle = field === "title" ? value : col.title;
+            updatedCol.status = generateUniqueStatus(
+              newGmailLabel,
+              newTitle,
+              columns,
+              col.id
+            );
+          }
+
+          return updatedCol;
+        }
+        return col;
+      })
     );
   };
 
@@ -313,11 +442,26 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
                           }
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                         >
-                          {GMAIL_LABELS.map((label) => (
-                            <option key={label.value} value={label.value}>
-                              {label.label}
-                            </option>
-                          ))}
+                          {GMAIL_LABELS.map((label) => {
+                            const isUsed =
+                              !!label.value &&
+                              isGmailLabelUsed(label.value, columns, column.id);
+                            return (
+                              <option
+                                key={label.value || "none"}
+                                value={label.value}
+                                disabled={isUsed}
+                                style={
+                                  isUsed
+                                    ? { color: "#999", fontStyle: "italic" }
+                                    : undefined
+                                }
+                              >
+                                {label.label}
+                                {isUsed ? " (Already used)" : ""}
+                              </option>
+                            );
+                          })}
                         </select>
                       </div>
 

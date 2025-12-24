@@ -5,7 +5,11 @@ import mailboxesData from "../data/mailboxes.json";
 import { authMiddleware } from "../middleware/auth";
 import gmailService from "../services/gmail";
 import tokenStore from "../services/tokenStore";
-import { parseGmailMessage, createRawEmail } from "../utils/emailParser";
+import {
+  parseGmailMessage,
+  createRawEmail,
+  stripHtml,
+} from "../utils/emailParser";
 import aiSummarization from "../services/aiSummarization";
 import EmailModel from "../models/Email";
 import Fuse from "fuse.js";
@@ -73,7 +77,7 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
       cc: doc.cc || [],
       subject: doc.subject,
       body: doc.body,
-      preview: doc.bodySnippet || doc.body.substring(0, 150),
+      preview: stripHtml(doc.bodySnippet || doc.body).substring(0, 150),
       timestamp: doc.timestamp.toISOString(),
       isRead: doc.isRead,
       isStarred: doc.isStarred,
@@ -89,7 +93,7 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
       gmailLink: `https://mail.google.com/mail/u/0/#inbox/${doc.emailId}`,
     }));
 
-    // Configure Fuse.js for fuzzy search
+    // Configure Fuse.js for fuzzy search with more lenient settings
     const fuseOptions = {
       keys: [
         { name: "subject", weight: 3 }, // Subject has highest priority
@@ -98,25 +102,70 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
         { name: "body", weight: 1 }, // Body has lowest priority
         { name: "preview", weight: 1.5 }, // Preview snippet
       ],
-      threshold: 0.4, // 0.0 = exact match, 1.0 = match anything (0.4 is good for typo tolerance)
-      distance: 100, // Maximum distance between characters
-      minMatchCharLength: 2, // Minimum 2 characters to match
-      includeScore: true, // Include relevance score
-      ignoreLocation: true, // Don't care about position in string
+      threshold: 0.4, // More lenient threshold to find more results
+      distance: 100,
+      minMatchCharLength: 2,
+      includeScore: true,
+      ignoreLocation: true,
       useExtendedSearch: false,
+      findAllMatches: true,
     };
 
     // Create Fuse instance and search
     const fuse = new Fuse(emailsToSearch, fuseOptions);
-    const searchResults = fuse.search(query);
+    let searchResults = fuse.search(query);
 
     console.log(
       `Fuzzy search found ${searchResults.length} results for query "${query}"`
     );
 
-    // Extract and sort results by relevance (lower score = better match)
+    // If fuzzy search returns no results, fallback to simple substring search
+    if (searchResults.length === 0) {
+      console.log(
+        "Fuzzy search returned 0 results, falling back to substring matching"
+      );
+      const queryLower = query.toLowerCase();
+      const substringMatches = emailsToSearch.filter((email) => {
+        return (
+          email.subject.toLowerCase().includes(queryLower) ||
+          (email.from.name &&
+            email.from.name.toLowerCase().includes(queryLower)) ||
+          email.from.email.toLowerCase().includes(queryLower) ||
+          email.body.toLowerCase().includes(queryLower) ||
+          email.preview.toLowerCase().includes(queryLower)
+        );
+      });
+
+      // Convert to Fuse result format for consistent processing
+      searchResults = substringMatches.map((item, index) => ({
+        item,
+        score: 0,
+        refIndex: index,
+      }));
+      console.log(`Substring search found ${searchResults.length} results`);
+    }
+
+    // Prioritize exact matches and sort by relevance
     const rankedResults = searchResults
-      .sort((a, b) => (a.score || 0) - (b.score || 0))
+      .map((result) => {
+        const item = result.item;
+        const queryLower = query.toLowerCase();
+        let exactMatchBonus = 0;
+
+        // Strong bonus for exact substring matches
+        if (item.subject.toLowerCase().includes(queryLower))
+          exactMatchBonus += 0.4;
+        if (item.from.name && item.from.name.toLowerCase().includes(queryLower))
+          exactMatchBonus += 0.3;
+        if (item.from.email.toLowerCase().includes(queryLower))
+          exactMatchBonus += 0.3;
+
+        return {
+          item: result.item,
+          adjustedScore: (result.score || 0) - exactMatchBonus,
+        };
+      })
+      .sort((a, b) => a.adjustedScore - b.adjustedScore)
       .map((result) => result.item);
 
     res.json({
@@ -175,13 +224,16 @@ router.post(
       );
 
       // Fetch all emails with embeddings for the user
+      // IMPORTANT: Only fetch emails with compatible embedding model to avoid dimension mismatches
+      const targetModel = embeddingService.getModel();
       const emailsWithEmbeddings = await EmailModel.find({
         userId: userId,
         embedding: { $exists: true, $ne: null },
+        embeddingModel: targetModel, // Filter by model to ensure compatibility
       });
 
       console.log(
-        `Found ${emailsWithEmbeddings.length} emails with embeddings for user ${userId}`
+        `Found ${emailsWithEmbeddings.length} emails with embeddings (model: ${targetModel}) for user ${userId}`
       );
 
       if (emailsWithEmbeddings.length === 0) {
@@ -206,6 +258,7 @@ router.post(
             similarity,
           };
         })
+        .filter((item) => item.similarity > 0.2) // Keep results with similarity > 0.2 (lower threshold for better recall)
         .sort((a, b) => b.similarity - a.similarity) // Sort by highest similarity
         .slice(0, limit); // Limit results
 
@@ -219,7 +272,7 @@ router.post(
         cc: email.cc || [],
         subject: email.subject,
         body: email.body,
-        preview: email.bodySnippet || email.body.substring(0, 150),
+        preview: stripHtml(email.bodySnippet || email.body).substring(0, 150),
         timestamp: email.timestamp.toISOString(),
         isRead: email.isRead,
         isStarred: email.isStarred,
@@ -344,6 +397,47 @@ router.get(
 );
 
 /**
+ * Helper function to determine email status based on Gmail labels and Kanban configuration
+ * Maps Gmail labels to the appropriate Kanban column status
+ */
+async function getStatusFromGmailLabels(
+  userId: string,
+  gmailLabels: string[]
+): Promise<string> {
+  try {
+    // Fetch user's Kanban configuration
+    let kanbanConfig = await KanbanConfig.findOne({ userId });
+
+    // If no config exists, create default config
+    if (!kanbanConfig) {
+      kanbanConfig = new KanbanConfig({ userId });
+      await kanbanConfig.save();
+    }
+
+    // Find the first column that matches one of the Gmail labels
+    // Priority: check labels in order of column.order
+    const sortedColumns = kanbanConfig.columns.sort(
+      (a, b) => a.order - b.order
+    );
+
+    for (const column of sortedColumns) {
+      if (column.gmailLabel && gmailLabels.includes(column.gmailLabel)) {
+        console.log(
+          `Mapped Gmail label "${column.gmailLabel}" to status "${column.status}"`
+        );
+        return column.status;
+      }
+    }
+
+    // Default to "inbox" if no matching label found
+    return "inbox";
+  } catch (error) {
+    console.error("Error mapping Gmail labels to status:", error);
+    return "inbox"; // Fallback to inbox on error
+  }
+}
+
+/**
  * Helper function to get email from DB or fetch from Gmail and save with AI summary
  * Falls back gracefully if MongoDB is not connected
  */
@@ -371,8 +465,9 @@ async function getOrCreateEmailFromGmail(
         cc: existingEmail.cc || [],
         subject: existingEmail.subject,
         body: existingEmail.body,
-        preview:
-          existingEmail.bodySnippet || existingEmail.body.substring(0, 150),
+        preview: stripHtml(
+          existingEmail.bodySnippet || existingEmail.body
+        ).substring(0, 150),
         timestamp: existingEmail.timestamp.toISOString(),
         isRead: existingEmail.isRead,
         isStarred: existingEmail.isStarred,
@@ -405,12 +500,18 @@ async function getOrCreateEmailFromGmail(
 
   // Generate embedding for semantic search
   let embedding: number[] | undefined = undefined;
+  let embeddingModel: string | undefined = undefined;
+  let embeddingDim: number | undefined = undefined;
   try {
     embedding = await embeddingService.generateEmailEmbedding(
       parsedEmail.subject,
       parsedEmail.body
     );
-    console.log(`Generated embedding for email ${parsedEmail.id}`);
+    embeddingModel = embeddingService.getModel();
+    embeddingDim = embedding.length;
+    console.log(
+      `Generated embedding for email ${parsedEmail.id} (model: ${embeddingModel}, dim: ${embeddingDim})`
+    );
   } catch (error) {
     console.warn(
       `Failed to generate embedding for email ${parsedEmail.id}:`,
@@ -422,6 +523,9 @@ async function getOrCreateEmailFromGmail(
   // Try to save to MongoDB (if connected)
   try {
     const labels = gmailMessage.labelIds || [];
+
+    // Determine status based on Gmail labels and Kanban configuration
+    const status = await getStatusFromGmailLabels(userId, labels);
 
     const newEmail = new EmailModel({
       emailId: parsedEmail.id,
@@ -442,10 +546,13 @@ async function getOrCreateEmailFromGmail(
       })),
       labels: labels,
       mailboxId: mailboxId,
-      status: "inbox",
+      status: status, // Use mapped status from Gmail labels
       isRead: parsedEmail.isRead,
       isStarred: parsedEmail.isStarred,
       embedding: embedding, // Add embedding
+      embeddingModel: embeddingModel, // Add model metadata
+      embeddingDim: embeddingDim, // Add dimension metadata
+      embeddingCreatedAt: embedding ? new Date() : undefined, // Add timestamp
     });
 
     await newEmail.save();
@@ -1082,11 +1189,24 @@ router.patch(
         return;
       }
 
-      const validStatuses: EmailStatus[] = ["inbox", "todo", "done", "snoozed"];
+      // Fetch user's Kanban configuration to validate status
+      let kanbanConfig = await KanbanConfig.findOne({ userId });
+
+      // If no config exists, create default config
+      if (!kanbanConfig) {
+        kanbanConfig = new KanbanConfig({ userId });
+        await kanbanConfig.save();
+      }
+
+      // Extract valid statuses from user's Kanban columns
+      const validStatuses = kanbanConfig.columns.map((col) => col.status);
+
       if (!validStatuses.includes(status)) {
         res.status(400).json({
           success: false,
-          message: "Invalid status. Must be one of: inbox, todo, done, snoozed",
+          message: `Invalid status. Must be one of: ${validStatuses.join(
+            ", "
+          )}`,
         });
         return;
       }
@@ -1202,7 +1322,10 @@ router.patch(
         })),
         subject: emailDoc.subject,
         body: emailDoc.body,
-        preview: emailDoc.bodySnippet || emailDoc.body.substring(0, 150),
+        preview: stripHtml(emailDoc.bodySnippet || emailDoc.body).substring(
+          0,
+          150
+        ),
         timestamp: emailDoc.timestamp.toISOString(),
         isRead: emailDoc.isRead,
         isStarred: emailDoc.isStarred,
@@ -1304,7 +1427,10 @@ router.post(
         })),
         subject: emailDoc.subject,
         body: emailDoc.body,
-        preview: emailDoc.bodySnippet || emailDoc.body.substring(0, 150),
+        preview: stripHtml(emailDoc.bodySnippet || emailDoc.body).substring(
+          0,
+          150
+        ),
         timestamp: emailDoc.timestamp.toISOString(),
         isRead: emailDoc.isRead,
         isStarred: emailDoc.isStarred,
@@ -1507,11 +1633,24 @@ router.get(
         return;
       }
 
-      const validStatuses: EmailStatus[] = ["inbox", "todo", "done", "snoozed"];
-      if (!validStatuses.includes(status as EmailStatus)) {
+      // Fetch user's Kanban configuration to validate status
+      let kanbanConfig = await KanbanConfig.findOne({ userId });
+
+      // If no config exists, create default config
+      if (!kanbanConfig) {
+        kanbanConfig = new KanbanConfig({ userId });
+        await kanbanConfig.save();
+      }
+
+      // Extract valid statuses from user's Kanban columns
+      const validStatuses = kanbanConfig.columns.map((col) => col.status);
+
+      if (!validStatuses.includes(status)) {
         res.status(400).json({
           success: false,
-          message: "Invalid status",
+          message: `Invalid status. Must be one of: ${validStatuses.join(
+            ", "
+          )}`,
         });
         return;
       }
@@ -1583,7 +1722,7 @@ router.get(
         })),
         subject: doc.subject,
         body: doc.body,
-        preview: doc.bodySnippet || doc.body.substring(0, 150),
+        preview: stripHtml(doc.bodySnippet || doc.body).substring(0, 150),
         timestamp: doc.timestamp.toISOString(),
         isRead: doc.isRead,
         isStarred: doc.isStarred,

@@ -6,7 +6,8 @@
 import apiClient from "./axios";
 
 export interface KanbanColumn {
-  id: string;
+  id: string; // Auto-generated UUID for React keys
+  status: string; // Semantic identifier for email status
   title: string;
   color: string;
   icon: string;
@@ -42,11 +43,12 @@ export const getKanbanConfig = async (): Promise<KanbanConfig> => {
  * Update user's Kanban configuration
  */
 export const updateKanbanConfig = async (
-  columns: KanbanColumn[]
+  columns: KanbanColumn[],
+  statusMigrations?: Record<string, string>
 ): Promise<KanbanConfig> => {
   const response = await apiClient.put<ApiResponse<KanbanConfig>>(
     "/kanban/config",
-    { columns }
+    { columns, statusMigrations }
   );
   return response.data.data!;
 };

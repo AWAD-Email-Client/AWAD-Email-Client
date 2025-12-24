@@ -37,7 +37,7 @@ export interface IEmail extends Document {
   mailboxId?: string;
 
   // Workflow status (custom field)
-  status: "inbox" | "todo" | "done" | "snoozed";
+  status: string; // Can be any custom Kanban column ID
 
   // Snooze feature
   snoozeUntil?: Date | null;
@@ -48,6 +48,9 @@ export interface IEmail extends Document {
 
   // Semantic Search
   embedding?: number[]; // Vector embedding for semantic search
+  embeddingModel?: string; // Model used to generate embedding (e.g., "text-embedding-004")
+  embeddingDim?: number; // Dimension of the embedding vector
+  embeddingCreatedAt?: Date; // When the embedding was generated
 
   // Timestamps
   createdAt: Date;
@@ -108,7 +111,6 @@ const EmailSchema = new Schema<IEmail>(
     // Workflow status
     status: {
       type: String,
-      enum: ["inbox", "todo", "done", "snoozed"],
       default: "inbox",
       index: true,
     },
@@ -122,6 +124,9 @@ const EmailSchema = new Schema<IEmail>(
 
     // Semantic Search
     embedding: { type: [Number], default: undefined }, // Vector embedding (768 dimensions for Gemini text-embedding-004)
+    embeddingModel: { type: String, default: undefined }, // Model used (e.g., "text-embedding-004")
+    embeddingDim: { type: Number, default: undefined }, // Dimension of embedding vector
+    embeddingCreatedAt: { type: Date, default: undefined }, // Timestamp when embedding was generated
   },
   {
     timestamps: true, // Automatically manage createdAt and updatedAt
