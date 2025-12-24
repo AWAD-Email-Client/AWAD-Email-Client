@@ -11,9 +11,34 @@ import {
   Loader2,
   Filter,
   ArrowUpDown,
+  Settings as SettingsIcon,
+  Star,
+  Archive,
+  Send,
+  AlertCircle,
+  Zap,
+  Target,
+  Flag,
 } from "lucide-react";
 import type { Email, EmailStatus } from "../../types";
 import * as emailsAPI from "../../api/emails.api";
+import { getKanbanConfig } from "../../api/kanban.api";
+import KanbanSettings from "./KanbanSettings";
+
+// Icon mapping
+const ICON_MAP: Record<string, React.ReactNode> = {
+  Inbox: <Inbox className="w-5 h-5" />,
+  Clock: <Clock className="w-5 h-5" />,
+  CheckCircle: <CheckCircle className="w-5 h-5" />,
+  Star: <Star className="w-5 h-5" />,
+  Archive: <Archive className="w-5 h-5" />,
+  Mail: <Mail className="w-5 h-5" />,
+  Send: <Send className="w-5 h-5" />,
+  AlertCircle: <AlertCircle className="w-5 h-5" />,
+  Zap: <Zap className="w-5 h-5" />,
+  Target: <Target className="w-5 h-5" />,
+  Flag: <Flag className="w-5 h-5" />,
+};
 
 interface KanbanBoardProps {
   mailboxId?: string; // Optional - Kanban shows all emails by status
@@ -22,52 +47,23 @@ interface KanbanBoardProps {
 }
 
 interface Column {
-  id: EmailStatus;
+  id: string; // React key (UUID)
+  status: string; // Email status identifier
   title: string;
   icon: React.ReactNode;
   color: string;
 }
-
-const columns: Column[] = [
-  {
-    id: "inbox",
-    title: "Inbox",
-    icon: <Inbox className="w-5 h-5" />,
-    color: "bg-blue-500",
-  },
-  {
-    id: "todo",
-    title: "To Do",
-    icon: <Clock className="w-5 h-5" />,
-    color: "bg-yellow-500",
-  },
-  {
-    id: "done",
-    title: "Done",
-    icon: <CheckCircle className="w-5 h-5" />,
-    color: "bg-green-500",
-  },
-  {
-    id: "snoozed",
-    title: "Snoozed",
-    icon: <Clock className="w-5 h-5" />,
-    color: "bg-purple-500",
-  },
-];
 
 const KanbanBoard: React.FC<KanbanBoardProps> = ({
   mailboxId,
   onSelectEmail,
   onGenerateSummary,
 }) => {
-  const [emailsByStatus, setEmailsByStatus] = useState<
-    Record<EmailStatus, Email[]>
-  >({
-    inbox: [],
-    todo: [],
-    done: [],
-    snoozed: [],
-  });
+  const [columns, setColumns] = useState<Column[]>([]);
+  const [emailsByStatus, setEmailsByStatus] = useState<Record<string, Email[]>>(
+    {}
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [draggingEmail, setDraggingEmail] = useState<Email | null>(null);
   const [snoozeEmailId, setSnoozeEmailId] = useState<string | null>(null);
@@ -78,8 +74,73 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const [filterUnread, setFilterUnread] = useState(false);
   const [filterAttachments, setFilterAttachments] = useState(false);
 
+  // Load Kanban configuration
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const config = await getKanbanConfig();
+        const loadedColumns: Column[] = config.columns
+          .sort((a, b) => a.order - b.order)
+          .map((col) => ({
+            id: col.id,
+            status: col.status,
+            title: col.title,
+            icon: ICON_MAP[col.icon] || <Inbox className="w-5 h-5" />,
+            color: col.color,
+          }));
+        setColumns(loadedColumns);
+
+        // Initialize emailsByStatus with empty arrays for each status
+        const initialEmails: Record<string, Email[]> = {};
+        loadedColumns.forEach((col) => {
+          initialEmails[col.status] = [];
+        });
+        setEmailsByStatus(initialEmails);
+      } catch (error) {
+        console.error("Failed to load Kanban config:", error);
+        // Fallback to default columns
+        const defaultColumns: Column[] = [
+          {
+            id: "col-inbox",
+            status: "inbox",
+            title: "Inbox",
+            icon: <Inbox className="w-5 h-5" />,
+            color: "bg-blue-500",
+          },
+          {
+            id: "col-todo",
+            status: "todo",
+            title: "To Do",
+            icon: <Clock className="w-5 h-5" />,
+            color: "bg-yellow-500",
+          },
+          {
+            id: "col-done",
+            status: "done",
+            title: "Done",
+            icon: <CheckCircle className="w-5 h-5" />,
+            color: "bg-green-500",
+          },
+        ];
+        setColumns(defaultColumns);
+        setEmailsByStatus({ inbox: [], todo: [], done: [] });
+      }
+    };
+    loadConfig();
+  }, []);
+
+  // Auto-fetch emails when columns are loaded
+  useEffect(() => {
+    if (columns.length > 0) {
+      fetchEmailsByStatus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns.length]); // Only trigger when columns count changes, not function reference
+
   // Fetch emails grouped by status
   const fetchEmailsByStatus = useCallback(async () => {
+    if (columns.length === 0) return; // Wait for columns to load
+
     try {
       setLoading(true);
 
@@ -98,19 +159,14 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
       // Now fetch emails by status from MongoDB
       const statusPromises = columns.map((col) =>
-        emailsAPI.fetchEmailsByStatus(col.id)
+        emailsAPI.fetchEmailsByStatus(col.status as EmailStatus)
       );
 
       const results = await Promise.all(statusPromises);
-      const newEmailsByStatus: Record<EmailStatus, Email[]> = {
-        inbox: [],
-        todo: [],
-        done: [],
-        snoozed: [],
-      };
+      const newEmailsByStatus: Record<string, Email[]> = {};
 
       results.forEach((emails, index) => {
-        const status = columns[index].id;
+        const status = columns[index].status;
         newEmailsByStatus[status] = emails;
       });
 
@@ -120,7 +176,12 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [mailboxId]);
+  }, [mailboxId, columns]);
+
+  const handleConfigUpdated = () => {
+    // Reload config and refetch emails
+    window.location.reload(); // Simple approach - reload the page
+  };
 
   const handleGenerateSummary = async (
     e: React.MouseEvent,
@@ -138,8 +199,8 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
         setEmailsByStatus((prev) => {
           const updated = { ...prev };
           Object.keys(updated).forEach((status) => {
-            updated[status as EmailStatus] = updated[status as EmailStatus].map(
-              (email) => (email.id === emailId ? { ...email, summary } : email)
+            updated[status] = updated[status].map((email) =>
+              email.id === emailId ? { ...email, summary } : email
             );
           });
           return updated;
@@ -175,7 +236,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
   };
 
   // Handle drop
-  const handleDrop = async (targetStatus: EmailStatus, e: React.DragEvent) => {
+  const handleDrop = async (targetStatus: string, e: React.DragEvent) => {
     e.preventDefault();
 
     if (!draggingEmail || draggingEmail.status === targetStatus) {
@@ -211,7 +272,10 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
         }));
       } else {
         // Update status on backend
-        await emailsAPI.updateEmailStatus(draggingEmail.id, targetStatus);
+        await emailsAPI.updateEmailStatus(
+          draggingEmail.id,
+          targetStatus as EmailStatus
+        );
 
         // Update local state
         const sourceStatus = draggingEmail.status;
@@ -222,7 +286,11 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           ),
           [targetStatus]: [
             ...prev[targetStatus],
-            { ...draggingEmail, status: targetStatus, snoozeUntil: null },
+            {
+              ...draggingEmail,
+              status: targetStatus as EmailStatus,
+              snoozeUntil: null,
+            },
           ],
         }));
       }
@@ -282,18 +350,18 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           snoozed:
             sourceStatus === "snoozed"
               ? prev.snoozed.map((e) =>
-                e.id === emailId
-                  ? { ...e, snoozeUntil: snoozeUntil.toISOString() }
-                  : e
-              )
+                  e.id === emailId
+                    ? { ...e, snoozeUntil: snoozeUntil.toISOString() }
+                    : e
+                )
               : [
-                ...prev.snoozed,
-                {
-                  ...emailToSnooze,
-                  status: "snoozed",
-                  snoozeUntil: snoozeUntil.toISOString(),
-                },
-              ],
+                  ...prev.snoozed,
+                  {
+                    ...emailToSnooze,
+                    status: "snoozed",
+                    snoozeUntil: snoozeUntil.toISOString(),
+                  },
+                ],
         };
       });
 
@@ -442,11 +510,13 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
     // Apply filters
     if (filterUnread) {
-      filtered = filtered.filter(email => !email.isRead);
+      filtered = filtered.filter((email) => !email.isRead);
     }
 
     if (filterAttachments) {
-      filtered = filtered.filter(email => email.attachments && email.attachments.length > 0);
+      filtered = filtered.filter(
+        (email) => email.attachments && email.attachments.length > 0
+      );
     }
 
     // Apply sorting
@@ -509,7 +579,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
               <ArrowUpDown className="w-4 h-4 text-gray-500" />
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as "newest" | "oldest")}
+                onChange={(e) =>
+                  setSortBy(e.target.value as "newest" | "oldest")
+                }
                 className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               >
                 <option value="newest">Date: Newest First</option>
@@ -522,19 +594,21 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
               <Filter className="w-4 h-4 text-gray-500" />
               <button
                 onClick={() => setFilterUnread(!filterUnread)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${filterUnread
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  filterUnread
                     ? "bg-primary-600 text-white"
                     : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-                  }`}
+                }`}
               >
                 Unread Only
               </button>
               <button
                 onClick={() => setFilterAttachments(!filterAttachments)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${filterAttachments
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  filterAttachments
                     ? "bg-primary-600 text-white"
                     : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-                  }`}
+                }`}
               >
                 Has Attachments
               </button>
@@ -555,12 +629,21 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           </div>
 
           {!loading && (
-            <button
-              onClick={fetchEmailsByStatus}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Refresh
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+              >
+                <SettingsIcon className="w-4 h-4" />
+                Configure
+              </button>
+              <button
+                onClick={fetchEmailsByStatus}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Refresh
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -595,7 +678,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
               key={column.id}
               className="flex flex-col flex-1 bg-gray-100 rounded-lg p-4"
               onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(column.id, e)}
+              onDrop={(e) => handleDrop(column.status, e)}
             >
               {/* Column Header */}
               <div className="flex items-center gap-2 mb-4">
@@ -608,8 +691,10 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                   </h3>
                   <p className="text-xs text-gray-600">
                     {(() => {
-                      const filtered = getFilteredAndSortedEmails(emailsByStatus[column.id]);
-                      const total = emailsByStatus[column.id].length;
+                      const filtered = getFilteredAndSortedEmails(
+                        emailsByStatus[column.status]
+                      );
+                      const total = emailsByStatus[column.status].length;
                       return filtered.length !== total
                         ? `${filtered.length} of ${total} emails`
                         : `${total} emails`;
@@ -622,11 +707,13 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
               <div className="flex-1 space-y-3 overflow-y-auto scrollbar-thin">
                 {(() => {
                   // F3: Apply filters and sorting
-                  const filteredSortedEmails = getFilteredAndSortedEmails(emailsByStatus[column.id]);
+                  const filteredSortedEmails = getFilteredAndSortedEmails(
+                    emailsByStatus[column.status]
+                  );
 
                   return filteredSortedEmails.length === 0 ? (
                     <div className="text-center py-8 text-gray-400 text-sm">
-                      {emailsByStatus[column.id].length === 0
+                      {emailsByStatus[column.status].length === 0
                         ? "No emails in this column"
                         : "No emails match current filters"}
                     </div>
@@ -641,6 +728,13 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           ))}
         </div>
       )}
+
+      {/* Kanban Settings Modal */}
+      <KanbanSettings
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onConfigUpdated={handleConfigUpdated}
+      />
     </div>
   );
 };

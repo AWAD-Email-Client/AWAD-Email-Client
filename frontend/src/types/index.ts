@@ -45,7 +45,7 @@ export interface Attachment {
   type: string;
 }
 
-export type EmailStatus = 'inbox' | 'todo' | 'done' | 'snoozed';
+export type EmailStatus = string; // Allow any custom Kanban column status
 
 export interface Email {
   id: string;

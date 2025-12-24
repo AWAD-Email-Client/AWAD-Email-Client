@@ -8,6 +8,24 @@ import { Email, EmailAddress, Attachment } from "../types";
  */
 
 /**
+ * Strip HTML tags and decode entities from text
+ */
+export function stripHtml(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "") // Remove style tags and content
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "") // Remove script tags and content
+    .replace(/<[^>]+>/g, "") // Remove all HTML tags
+    .replace(/&nbsp;/gi, " ") // Replace &nbsp;
+    .replace(/&lt;/gi, "<") // Decode HTML entities
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ") // Replace multiple whitespace with single space
+    .trim();
+}
+
+/**
  * Parse Gmail message to Email format
  */
 export function parseGmailMessage(
@@ -38,7 +56,7 @@ export function parseGmailMessage(
 
   // Extract body
   const body = extractBody(message.payload);
-  const preview = body.substring(0, 150).replace(/<[^>]*>/g, ""); // Strip HTML for preview
+  const preview = stripHtml(body).substring(0, 150); // Strip HTML first, then truncate
 
   // Extract attachments
   const attachments = extractAttachments(message.payload);
@@ -68,7 +86,7 @@ export function parseGmailMessage(
     timestamp:
       date || new Date(parseInt(message.internalDate || "0")).toISOString(),
     attachments,
-    status: 'inbox',
+    status: "inbox",
     snoozeUntil: null,
     summary: null,
     gmailLink,
