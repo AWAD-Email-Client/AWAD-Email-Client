@@ -27,12 +27,13 @@ router.get("/config", async (req: Request, res: Response): Promise<void> => {
     let config = await KanbanConfig.findOne({ userId });
 
     if (!config) {
-      // Create default config
+      // Create default config with 4 columns
       config = new KanbanConfig({
         userId,
         columns: [
           {
-            id: "inbox",
+            id: "col-inbox",
+            status: "inbox",
             title: "Inbox",
             color: "bg-blue-500",
             icon: "Inbox",
@@ -40,7 +41,8 @@ router.get("/config", async (req: Request, res: Response): Promise<void> => {
             order: 0,
           },
           {
-            id: "todo",
+            id: "col-todo",
+            status: "todo",
             title: "To Do",
             color: "bg-yellow-500",
             icon: "Clock",
@@ -48,7 +50,8 @@ router.get("/config", async (req: Request, res: Response): Promise<void> => {
             order: 1,
           },
           {
-            id: "done",
+            id: "col-done",
+            status: "done",
             title: "Done",
             color: "bg-green-500",
             icon: "CheckCircle",
@@ -56,7 +59,8 @@ router.get("/config", async (req: Request, res: Response): Promise<void> => {
             order: 2,
           },
           {
-            id: "snoozed",
+            id: "col-snoozed",
+            status: "snoozed",
             title: "Snoozed",
             color: "bg-purple-500",
             icon: "Clock",
