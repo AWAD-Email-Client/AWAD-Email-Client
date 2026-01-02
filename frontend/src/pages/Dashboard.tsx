@@ -17,6 +17,8 @@ import { useMailboxes } from "../hooks/useMailboxes";
 import { useMailboxEmails } from "../hooks/useMailboxEmails";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { cacheService } from "../services/cacheService";
+import { useKeyboardShortcuts, type KeyboardActions, type ShortcutContext } from "../hooks/useKeyboardShortcuts";
+import KeyboardHelpOverlay from "../components/dashboard/KeyboardHelpOverlay";
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -42,6 +44,10 @@ const Dashboard: React.FC = () => {
   const [searchResults, setSearchResults] = useState<Email[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+
+  // Keyboard Navigation
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [activeZone, setActiveZone] = useState<ShortcutContext>('list');
 
   // Select Inbox by default when mailboxes are loaded
   useEffect(() => {
@@ -296,6 +302,94 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Update active zone based on selection
+  useEffect(() => {
+    if (!selectedEmail) {
+      setActiveZone('list');
+    }
+  }, [selectedEmail]);
+
+  const handleKeyboardActions: KeyboardActions = {
+    nextItem: () => {
+      if (!emails.length) return;
+      const currentIndex = selectedEmail ? emails.findIndex(e => e.id === selectedEmail.id) : -1;
+      const nextIndex = Math.min(emails.length - 1, currentIndex + 1);
+      if (nextIndex !== currentIndex) {
+        handleEmailSelect(emails[nextIndex]);
+      }
+    },
+    prevItem: () => {
+      if (!emails.length) return;
+      const currentIndex = selectedEmail ? emails.findIndex(e => e.id === selectedEmail.id) : -1;
+      if (currentIndex === -1) {
+          handleEmailSelect(emails[0]);
+          return;
+      }
+      const prevIndex = Math.max(0, currentIndex - 1);
+      if (prevIndex !== currentIndex) {
+        handleEmailSelect(emails[prevIndex]);
+      }
+    },
+    openItem: () => {
+      if (selectedEmail) {
+        setActiveZone('message');
+      } else if (emails.length > 0) {
+         handleEmailSelect(emails[0]);
+         setActiveZone('message');
+      }
+    },
+    goBack: () => {
+      if (activeZone === 'message') {
+        setActiveZone('list');
+      } else {
+        setSelectedEmail(null);
+      }
+    },
+    delete: () => {
+      if (selectedEmail) handleDeleteEmail(selectedEmail.id);
+    },
+    archive: () => {
+       // Implement archive if available
+    },
+    reply: () => {
+       if (selectedEmail) handleReply(selectedEmail);
+    },
+    replyAll: () => {
+       if (selectedEmail) handleReply(selectedEmail, true);
+    },
+    forward: () => {
+       if (selectedEmail) handleForward(selectedEmail);
+    },
+    markRead: () => {
+       if (selectedEmail) handleMarkAsRead([selectedEmail.id], true);
+    },
+    markUnread: () => {
+       if (selectedEmail) handleMarkAsRead([selectedEmail.id], false);
+    },
+    star: () => {
+       if (selectedEmail) handleToggleStar(selectedEmail.id);
+    },
+    goToInbox: () => {
+       const inbox = mailboxes.find(mb => mb.name === 'INBOX');
+       if (inbox) handleMailboxSelect(inbox);
+    },
+    goToSent: () => {
+       const sent = mailboxes.find(mb => mb.name === 'SENT');
+       if (sent) handleMailboxSelect(sent);
+    },
+    goToDrafts: () => {
+       const drafts = mailboxes.find(mb => mb.name === 'DRAFTS');
+       if (drafts) handleMailboxSelect(drafts);
+    },
+    search: () => {
+       const searchInput = document.querySelector('input[placeholder="Search emails..."]') as HTMLInputElement;
+       if (searchInput) searchInput.focus();
+    },
+    showHelp: () => setShowShortcuts(true),
+  };
+
+  useKeyboardShortcuts(handleKeyboardActions, activeZone, !composeOpen && !showShortcuts);
+
   if (mailboxesLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -412,6 +506,7 @@ const Dashboard: React.FC = () => {
             />
 
             {/* Column 2: Email List (~40%) */}
+            <div className="flex-1 flex flex-col min-w-0" onClick={() => setActiveZone('list')}>
             <EmailList
               emails={emails}
               loading={emailsLoading}
@@ -424,8 +519,10 @@ const Dashboard: React.FC = () => {
               onCompose={handleCompose}
               onGenerateSummary={handleGenerateSummary}
             />
+            </div>
 
             {/* Column 3: Email Detail (~40%) */}
+            <div className="flex-1 flex flex-col min-w-0" onClick={() => setActiveZone('message')}>
             <EmailDetail
               email={selectedEmail}
               onToggleStar={handleToggleStar}
@@ -434,6 +531,7 @@ const Dashboard: React.FC = () => {
               onForward={handleForward}
               onEmailUpdate={handleEmailUpdate}
             />
+            </div>
           </>
         )}
       </div>
@@ -480,6 +578,8 @@ const Dashboard: React.FC = () => {
 
       {/* Toast Notifications */}
       <Toaster position="top-right" reverseOrder={false} />
+      
+      <KeyboardHelpOverlay isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
     </div>
   );
 };

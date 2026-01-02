@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { formatDistanceToNow } from "date-fns";
 import {
   Mail,
@@ -42,6 +42,16 @@ const EmailList: React.FC<EmailListProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
+  const selectedEmailRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (selectedEmail && selectedEmailRef.current) {
+      selectedEmailRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [selectedEmail]);
 
   const handleGenerateSummary = async (
     e: React.MouseEvent,
@@ -101,7 +111,7 @@ const EmailList: React.FC<EmailListProps> = ({
   );
 
   return (
-    <div className="flex-1 flex flex-col bg-white border-r border-gray-200 min-w-0">
+    <div className="flex-1 flex flex-col bg-white border-r border-gray-200 min-w-0 max-h-full">
       {/* Header Actions */}
       <div className="p-4 border-b border-gray-200 space-y-3">
         {/* Search Bar */}
@@ -206,10 +216,12 @@ const EmailList: React.FC<EmailListProps> = ({
               return (
                 <div
                   key={email.id}
+                  ref={isSelected ? selectedEmailRef : null}
                   className={`
                     flex items-start gap-3 p-4 cursor-pointer transition-colors
                     ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"}
                   `}
+                  style={{ scrollMarginBlock: '100px' }}
                   onClick={() => onSelectEmail(email)}
                 >
                   {/* Checkbox */}

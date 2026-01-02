@@ -254,7 +254,7 @@ const EmailDetail: React.FC<EmailDetailProps> = ({
       </div>
 
       {/* Email Body */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
+      <div id="email-body-container" className="flex-1 overflow-y-auto scrollbar-thin p-6">
         <div
           className="prose prose-sm max-w-none"
           dangerouslySetInnerHTML={{ __html: sanitizedBody }}
