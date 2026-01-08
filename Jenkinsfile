@@ -12,11 +12,10 @@ pipeline {
     stages {
         stage('Setup') {
             steps {
-                sh '''
-          export NVM_DIR="$HOME/.nvm"
+        sh '''
+          \. "$HOME/.nvm/nvm.sh"
           [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
-          nvm use 20
           node -v
           npm -v
         '''
