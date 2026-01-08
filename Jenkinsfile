@@ -167,6 +167,7 @@ try {
                 }
             }
         }
+        }
 
         stage('Deploy to EC2') {
             steps {
@@ -215,5 +216,4 @@ try {
             }
         }
     }
-}
 }
