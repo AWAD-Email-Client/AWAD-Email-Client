@@ -67,18 +67,20 @@ pipeline {
 
         stage('Push to ECR') {
             steps {
-                script {
-                    sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
-                    
-                    if (env.BACKEND_CHANGED == 'true') {
-                        def repoUrl = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO_BACKEND}"
-                        sh "docker tag ${ECR_REPO_BACKEND}:${IMAGE_TAG} ${repoUrl}:${IMAGE_TAG}"
-                        sh "docker push ${repoUrl}:${IMAGE_TAG}"
-                    }
-                    if (env.FRONTEND_CHANGED == 'true') {
-                        def repoUrl = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO_FRONTEND}"
-                        sh "docker tag ${ECR_REPO_FRONTEND}:${IMAGE_TAG} ${repoUrl}:${IMAGE_TAG}"
-                        sh "docker push ${repoUrl}:${IMAGE_TAG}"
+                withCredentials([usernamePassword(credentialsId: 'aws-credentials', passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
+                    script {
+                        sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+                        
+                        if (env.BACKEND_CHANGED == 'true') {
+                            def repoUrl = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO_BACKEND}"
+                            sh "docker tag ${ECR_REPO_BACKEND}:${IMAGE_TAG} ${repoUrl}:${IMAGE_TAG}"
+                            sh "docker push ${repoUrl}:${IMAGE_TAG}"
+                        }
+                        if (env.FRONTEND_CHANGED == 'true') {
+                            def repoUrl = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO_FRONTEND}"
+                            sh "docker tag ${ECR_REPO_FRONTEND}:${IMAGE_TAG} ${repoUrl}:${IMAGE_TAG}"
+                            sh "docker push ${repoUrl}:${IMAGE_TAG}"
+                        }
                     }
                 }
             }
@@ -86,10 +88,12 @@ pipeline {
 
         stage('Provision Secrets') {
             steps {
-                script {
-                    def nodeScript = """
+                withCredentials([usernamePassword(credentialsId: 'aws-credentials', passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
+                    script {
+                        def nodeScript = """
 const fs = require('fs');
 const { execSync } = require('child_process');
+
 
 const secretId = process.env.AWS_SECRET_ID;
 const region = process.env.AWS_DEFAULT_REGION;
