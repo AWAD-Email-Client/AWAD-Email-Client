@@ -189,4 +189,26 @@ try {
             }
         }
     }
+
+    post {
+        always {
+            script {
+                echo 'Cleaning up workspace and images...'
+                // Remove local images to save space
+                if (env.BACKEND_CHANGED == 'true') {
+                    sh "docker rmi ${ECR_REPO_BACKEND}:${IMAGE_TAG} || true"
+                    def repoUrl = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO_BACKEND}"
+                    sh "docker rmi ${repoUrl}:${IMAGE_TAG} || true"
+                }
+                if (env.FRONTEND_CHANGED == 'true') {
+                    sh "docker rmi ${ECR_REPO_FRONTEND}:${IMAGE_TAG} || true"
+                    def repoUrl = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO_FRONTEND}"
+                    sh "docker rmi ${repoUrl}:${IMAGE_TAG} || true"
+                }
+                
+                // Clean up workspace
+                cleanWs()
+            }
+        }
+    }
 }
