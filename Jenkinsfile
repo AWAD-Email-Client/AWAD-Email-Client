@@ -162,7 +162,7 @@ try {
 """
                         writeFile file: 'provision_secrets.js', text: nodeScript
                         sh 'node provision_secrets.js'
-                        sh 'rm provision_secrets.js secrets.json'
+                        sh 'rm provision_secrets.js secrets.json || true'
                     }
                 }
             }
