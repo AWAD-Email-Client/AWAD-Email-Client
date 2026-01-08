@@ -25,11 +25,11 @@ pipeline {
             steps {
                 script {
                     // If this is the first build, assume everything changed
-                    if (env.GIT_PREVIOUS_COMMIT == null) {
+                    if (env.GIT_PREVIOUS_SUCCESSFUL_COMMIT == null) {
                         env.FRONTEND_CHANGED = 'true'
                         env.BACKEND_CHANGED = 'true'
                     } else {
-                        def changedFiles = sh(script: "git diff --name-only ${env.GIT_PREVIOUS_COMMIT} ${env.GIT_COMMIT}", returnStdout: true).trim()
+                        def changedFiles = sh(script: "git diff --name-only ${env.GIT_PREVIOUS_SUCCESSFUL_COMMIT} ${env.GIT_COMMIT}", returnStdout: true).trim()
                         env.FRONTEND_CHANGED = changedFiles.contains('frontend/') ? 'true' : 'false'
                         env.BACKEND_CHANGED = changedFiles.contains('backend/') ? 'true' : 'false'
                     }
