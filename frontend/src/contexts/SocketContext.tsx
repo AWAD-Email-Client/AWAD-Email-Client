@@ -21,9 +21,18 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const token = getAccessToken();
       
       const apiUrl: string = API_URL || 'http://localhost:5000/api';
-      const socketUrl = apiUrl.replace('/api', '');
+      // Handle both absolute URLs (http://...) and relative URLs (/api)
+      let socketUrl: string;
+      if (apiUrl.startsWith('http')) {
+        // Absolute URL: http://localhost:5000/api -> http://localhost:5000
+        socketUrl = apiUrl.replace('/api', '');
+      } else {
+        // Relative URL: /api -> / (same origin)
+        socketUrl = '/';
+      }
 
       const newSocket = io(socketUrl, {
+        path: '/ws',
         auth: {
           token: token
         }

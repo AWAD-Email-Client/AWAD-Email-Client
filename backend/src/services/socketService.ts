@@ -8,6 +8,7 @@ class SocketService {
 
   initialize(httpServer: HttpServer) {
     this.io = new SocketIOServer(httpServer, {
+      path: "/ws",
       cors: {
         origin: process.env.FRONTEND_URL || "http://localhost:5173",
         methods: ["GET", "POST"],
