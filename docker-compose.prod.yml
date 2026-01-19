@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  nginx-proxy:
+    image: nginx:latest
+    container_name: awad-nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - awad-network
+    restart: always
+
+  mongodb:
+    image: mongo:latest
+    container_name: awad-mongodb
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - awad-network
+    restart: always
+
+  backend:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/awad-backend:${BACKEND_IMAGE_TAG:-latest}
+    container_name: awad-backend
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+    networks:
+      - awad-network
+    restart: always
+
+  frontend:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/awad-frontend:${FRONTEND_IMAGE_TAG:-latest}
+    container_name: awad-frontend
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    networks:
+      - awad-network
+    restart: always
+
+networks:
+  awad-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:

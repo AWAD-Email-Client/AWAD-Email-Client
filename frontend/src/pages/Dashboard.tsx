@@ -11,15 +11,25 @@ import SearchResults from "../components/dashboard/SearchResults";
 import SearchBar from "../components/dashboard/SearchBar";
 import { LayoutGrid, List } from "lucide-react";
 import { semanticSearch } from "../api/emails.api";
+import { useSocket } from "../contexts/SocketContext";
+import toast, { Toaster } from "react-hot-toast";
+import { useMailboxes } from "../hooks/useMailboxes";
+import { useMailboxEmails } from "../hooks/useMailboxEmails";
+import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { cacheService } from "../services/cacheService";
+import { useKeyboardShortcuts, type KeyboardActions, type ShortcutContext } from "../hooks/useKeyboardShortcuts";
+import KeyboardHelpOverlay from "../components/dashboard/KeyboardHelpOverlay";
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
-  const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
-  const [emails, setEmails] = useState<Email[]>([]);
+  const { socket } = useSocket();
+  const isOnline = useOnlineStatus();
+  
+  const { mailboxes, loading: mailboxesLoading } = useMailboxes();
   const [selectedMailbox, setSelectedMailbox] = useState<Mailbox | null>(null);
+  const { emails, setEmails, loading: emailsLoading, refresh: refreshEmails } = useMailboxEmails(selectedMailbox?.id || null);
+
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [emailsLoading, setEmailsLoading] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "kanban">("kanban"); // Default to kanban
   const [composeMode, setComposeMode] = useState<{
@@ -35,51 +45,55 @@ const Dashboard: React.FC = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  // Fetch mailboxes on mount
+  // Keyboard Navigation
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [activeZone, setActiveZone] = useState<ShortcutContext>('list');
+
+  // Select Inbox by default when mailboxes are loaded
   useEffect(() => {
-    const fetchMailboxes = async () => {
-      try {
-        const response = await apiClient.get("/mailboxes");
-        const mailboxesData = response.data.data || response.data;
-        setMailboxes(mailboxesData);
-        // Select Inbox by default
-        const inbox = mailboxesData.find((mb: Mailbox) => mb.name === "Inbox");
-        if (inbox) {
-          setSelectedMailbox(inbox);
-        }
-      } catch (error) {
-        console.error("Failed to fetch mailboxes:", error);
-      } finally {
-        setLoading(false);
+    if (mailboxes.length > 0 && !selectedMailbox) {
+      const inbox = mailboxes.find((mb: Mailbox) => mb.name === "Inbox");
+      if (inbox) {
+        setSelectedMailbox(inbox);
+      }
+    }
+  }, [mailboxes, selectedMailbox]);
+
+  // Listen for new emails via Socket.io
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNewEmail = (newEmail: Email) => {
+      console.log("New email received:", newEmail);
+      
+      // Show toast notification
+      toast.success(`New email from ${newEmail.from.name || newEmail.from.email}: ${newEmail.subject}`, {
+        duration: 5000,
+        position: 'top-right',
+      });
+
+      // If we are viewing the Inbox, add the new email to the list
+      // Note: In a real app, we should check if the email belongs to the current mailbox
+      if (selectedMailbox?.name === newEmail.mailboxId) {
+        setEmails((prevEmails) => {
+          // Check if email already exists to avoid duplicates
+          if (prevEmails.some((e) => e.id === newEmail.id)) {
+            return prevEmails;
+          }
+          const newEmails = [newEmail, ...prevEmails];
+          // Update cache
+          cacheService.saveEmails(newEmails);
+          return newEmails;
+        });
       }
     };
 
-    fetchMailboxes();
-  }, []);
+    socket.on("email:new", handleNewEmail);
 
-  // Fetch emails when mailbox changes
-  useEffect(() => {
-    const fetchEmails = async () => {
-      if (!selectedMailbox) return;
-
-      setEmailsLoading(true);
-      try {
-        const response = await apiClient.get(
-          `/mailboxes/${selectedMailbox.id}/emails`
-        );
-        const emailsData = response.data.data || response.data;
-        setEmails(emailsData);
-        // Clear selected email when switching mailboxes
-        setSelectedEmail(null);
-      } catch (error) {
-        console.error("Failed to fetch emails:", error);
-      } finally {
-        setEmailsLoading(false);
-      }
+    return () => {
+      socket.off("email:new", handleNewEmail);
     };
-
-    fetchEmails();
-  }, [selectedMailbox]);
+  }, [socket, selectedMailbox, setEmails]);
 
   const handleMailboxSelect = (mailbox: Mailbox) => {
     setSelectedMailbox(mailbox);
@@ -87,18 +101,31 @@ const Dashboard: React.FC = () => {
 
   const handleEmailSelect = async (email: Email) => {
     try {
-      // Fetch full email details
-      const response = await apiClient.get(`/emails/${email.id}`);
-      const emailData = response.data.data || response.data;
-      setSelectedEmail(emailData);
+      // Try cache first
+      const cachedEmail = await cacheService.getEmail(email.id);
+      if (cachedEmail) {
+        setSelectedEmail(cachedEmail);
+      } else {
+        setSelectedEmail(email);
+      }
 
-      // Mark as read if unread
-      if (!email.isRead) {
-        await apiClient.patch(`/emails/${email.id}`, { isRead: true });
-        // Update local state
-        setEmails(
-          emails.map((e) => (e.id === email.id ? { ...e, isRead: true } : e))
-        );
+      if (isOnline) {
+        // Fetch full email details
+        const response = await apiClient.get(`/emails/${email.id}`);
+        const emailData = response.data.data || response.data;
+        setSelectedEmail(emailData);
+        await cacheService.saveEmail(emailData);
+
+        // Mark as read if unread
+        if (!email.isRead) {
+          await apiClient.patch(`/emails/${email.id}`, { isRead: true });
+          // Update local state
+          setEmails(
+            emails.map((e) => (e.id === email.id ? { ...e, isRead: true } : e))
+          );
+          // Update cache
+          await cacheService.saveEmail({ ...emailData, isRead: true });
+        }
       }
     } catch (error) {
       console.error("Failed to fetch email details:", error);
@@ -158,9 +185,7 @@ const Dashboard: React.FC = () => {
   };
 
   const handleRefresh = () => {
-    if (selectedMailbox) {
-      setSelectedMailbox({ ...selectedMailbox });
-    }
+    refreshEmails();
   };
 
   // F2: Handle search (both fuzzy and semantic)
@@ -277,7 +302,95 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  if (loading) {
+  // Update active zone based on selection
+  useEffect(() => {
+    if (!selectedEmail) {
+      setActiveZone('list');
+    }
+  }, [selectedEmail]);
+
+  const handleKeyboardActions: KeyboardActions = {
+    nextItem: () => {
+      if (!emails.length) return;
+      const currentIndex = selectedEmail ? emails.findIndex(e => e.id === selectedEmail.id) : -1;
+      const nextIndex = Math.min(emails.length - 1, currentIndex + 1);
+      if (nextIndex !== currentIndex) {
+        handleEmailSelect(emails[nextIndex]);
+      }
+    },
+    prevItem: () => {
+      if (!emails.length) return;
+      const currentIndex = selectedEmail ? emails.findIndex(e => e.id === selectedEmail.id) : -1;
+      if (currentIndex === -1) {
+          handleEmailSelect(emails[0]);
+          return;
+      }
+      const prevIndex = Math.max(0, currentIndex - 1);
+      if (prevIndex !== currentIndex) {
+        handleEmailSelect(emails[prevIndex]);
+      }
+    },
+    openItem: () => {
+      if (selectedEmail) {
+        setActiveZone('message');
+      } else if (emails.length > 0) {
+         handleEmailSelect(emails[0]);
+         setActiveZone('message');
+      }
+    },
+    goBack: () => {
+      if (activeZone === 'message') {
+        setActiveZone('list');
+      } else {
+        setSelectedEmail(null);
+      }
+    },
+    delete: () => {
+      if (selectedEmail) handleDeleteEmail(selectedEmail.id);
+    },
+    archive: () => {
+       // Implement archive if available
+    },
+    reply: () => {
+       if (selectedEmail) handleReply(selectedEmail);
+    },
+    replyAll: () => {
+       if (selectedEmail) handleReply(selectedEmail, true);
+    },
+    forward: () => {
+       if (selectedEmail) handleForward(selectedEmail);
+    },
+    markRead: () => {
+       if (selectedEmail) handleMarkAsRead([selectedEmail.id], true);
+    },
+    markUnread: () => {
+       if (selectedEmail) handleMarkAsRead([selectedEmail.id], false);
+    },
+    star: () => {
+       if (selectedEmail) handleToggleStar(selectedEmail.id);
+    },
+    goToInbox: () => {
+       const inbox = mailboxes.find(mb => mb.name === 'INBOX');
+       if (inbox) handleMailboxSelect(inbox);
+    },
+    goToSent: () => {
+       const sent = mailboxes.find(mb => mb.name === 'SENT');
+       if (sent) handleMailboxSelect(sent);
+    },
+    goToDrafts: () => {
+       const drafts = mailboxes.find(mb => mb.name === 'DRAFTS');
+       if (drafts) handleMailboxSelect(drafts);
+    },
+    search: () => {
+       const searchInput = document.querySelector('input[placeholder="Search emails..."]') as HTMLInputElement;
+       if (searchInput) searchInput.focus();
+    },
+    showHelp: () => setShowShortcuts(true),
+  };
+
+  useKeyboardShortcuts(handleKeyboardActions, activeZone, !composeOpen && !showShortcuts);
+
+  if (mailboxesLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
@@ -287,6 +400,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
+      <Toaster />
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -341,6 +455,13 @@ const Dashboard: React.FC = () => {
         </div>
       </header>
 
+      {!isOnline && (
+        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4" role="alert">
+          <p className="font-bold">Offline Mode</p>
+          <p>You are currently offline. Some features may be unavailable.</p>
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {searchMode ? (
@@ -385,6 +506,7 @@ const Dashboard: React.FC = () => {
             />
 
             {/* Column 2: Email List (~40%) */}
+            <div className="flex-1 flex flex-col min-w-0" onClick={() => setActiveZone('list')}>
             <EmailList
               emails={emails}
               loading={emailsLoading}
@@ -397,8 +519,10 @@ const Dashboard: React.FC = () => {
               onCompose={handleCompose}
               onGenerateSummary={handleGenerateSummary}
             />
+            </div>
 
             {/* Column 3: Email Detail (~40%) */}
+            <div className="flex-1 flex flex-col min-w-0" onClick={() => setActiveZone('message')}>
             <EmailDetail
               email={selectedEmail}
               onToggleStar={handleToggleStar}
@@ -407,6 +531,7 @@ const Dashboard: React.FC = () => {
               onForward={handleForward}
               onEmailUpdate={handleEmailUpdate}
             />
+            </div>
           </>
         )}
       </div>
@@ -450,6 +575,11 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Toast Notifications */}
+      <Toaster position="top-right" reverseOrder={false} />
+      
+      <KeyboardHelpOverlay isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
     </div>
   );
 };
