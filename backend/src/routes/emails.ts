@@ -48,15 +48,8 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
       });
       return;
     }
-
-    console.log(`Fuzzy search - userId: ${userId}, query: "${query}"`);
-
     // Fetch all emails for the user from MongoDB
     const allEmails = await EmailModel.find({ userId: userId });
-
-    console.log(
-      `Found ${allEmails.length} total emails in MongoDB for user ${userId}`
-    );
 
     if (allEmails.length === 0) {
       res.json({
@@ -77,6 +70,7 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
       cc: doc.cc || [],
       subject: doc.subject,
       body: doc.body,
+      bodyPlainText: stripHtml(doc.body),
       preview: stripHtml(doc.bodySnippet || doc.body).substring(0, 150),
       timestamp: doc.timestamp.toISOString(),
       isRead: doc.isRead,
@@ -99,7 +93,7 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
         { name: "subject", weight: 3 }, // Subject has highest priority
         { name: "from.name", weight: 2 }, // Sender name
         { name: "from.email", weight: 2 }, // Sender email
-        { name: "body", weight: 1 }, // Body has lowest priority
+        { name: "bodyPlainText", weight: 1 }, // Plain text body has lowest priority
         { name: "preview", weight: 1.5 }, // Preview snippet
       ],
       threshold: 0.4, // More lenient threshold to find more results
@@ -115,15 +109,8 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
     const fuse = new Fuse(emailsToSearch, fuseOptions);
     let searchResults = fuse.search(query);
 
-    console.log(
-      `Fuzzy search found ${searchResults.length} results for query "${query}"`
-    );
-
     // If fuzzy search returns no results, fallback to simple substring search
     if (searchResults.length === 0) {
-      console.log(
-        "Fuzzy search returned 0 results, falling back to substring matching"
-      );
       const queryLower = query.toLowerCase();
       const substringMatches = emailsToSearch.filter((email) => {
         return (
@@ -131,7 +118,7 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
           (email.from.name &&
             email.from.name.toLowerCase().includes(queryLower)) ||
           email.from.email.toLowerCase().includes(queryLower) ||
-          email.body.toLowerCase().includes(queryLower) ||
+          email.bodyPlainText.toLowerCase().includes(queryLower) ||
           email.preview.toLowerCase().includes(queryLower)
         );
       });
@@ -142,7 +129,6 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
         score: 0,
         refIndex: index,
       }));
-      console.log(`Substring search found ${searchResults.length} results`);
     }
 
     // Prioritize exact matches and sort by relevance
@@ -214,14 +200,9 @@ router.post(
         return;
       }
 
-      console.log(
-        `Semantic search - userId: ${userId}, query: "${query}", limit: ${limit}`
-      );
-
       // Generate embedding for the search query
-      const queryEmbedding = await embeddingService.generateQueryEmbedding(
-        query
-      );
+      const queryEmbedding =
+        await embeddingService.generateQueryEmbedding(query);
 
       // Fetch all emails with embeddings for the user
       // IMPORTANT: Only fetch emails with compatible embedding model to avoid dimension mismatches
@@ -231,10 +212,6 @@ router.post(
         embedding: { $exists: true, $ne: null },
         embeddingModel: targetModel, // Filter by model to ensure compatibility
       });
-
-      console.log(
-        `Found ${emailsWithEmbeddings.length} emails with embeddings (model: ${targetModel}) for user ${userId}`
-      );
 
       if (emailsWithEmbeddings.length === 0) {
         res.json({
@@ -251,7 +228,7 @@ router.post(
         .map((email) => {
           const similarity = embeddingService.cosineSimilarity(
             queryEmbedding,
-            email.embedding!
+            email.embedding!,
           );
           return {
             email,
@@ -289,15 +266,6 @@ router.post(
         similarity: similarity.toFixed(4), // Include similarity score for debugging
       }));
 
-      console.log(
-        `Semantic search returned ${
-          results.length
-        } results with similarities: ${results
-          .slice(0, 5)
-          .map((r) => r.similarity)
-          .join(", ")}`
-      );
-
       res.json({
         success: true,
         data: results,
@@ -313,7 +281,7 @@ router.post(
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
-  }
+  },
 );
 
 /**
@@ -393,7 +361,7 @@ router.get(
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
-  }
+  },
 );
 
 /**
@@ -402,7 +370,8 @@ router.get(
  */
 async function getStatusFromGmailLabels(
   userId: string,
-  gmailLabels: string[]
+  gmailLabels: string[],
+  mailboxId: string,
 ): Promise<string> {
   try {
     // Fetch user's Kanban configuration
@@ -417,23 +386,19 @@ async function getStatusFromGmailLabels(
     // Find the first column that matches one of the Gmail labels
     // Priority: check labels in order of column.order
     const sortedColumns = kanbanConfig.columns.sort(
-      (a, b) => a.order - b.order
+      (a, b) => a.order - b.order,
     );
 
     for (const column of sortedColumns) {
       if (column.gmailLabel && gmailLabels.includes(column.gmailLabel)) {
-        console.log(
-          `Mapped Gmail label "${column.gmailLabel}" to status "${column.status}"`
-        );
         return column.status;
       }
     }
 
-    // Default to "inbox" if no matching label found
-    return "inbox";
+    return mailboxId;
   } catch (error) {
     console.error("Error mapping Gmail labels to status:", error);
-    return "inbox"; // Fallback to inbox on error
+    return mailboxId; // Fallback to inbox on error
   }
 }
 
@@ -444,7 +409,7 @@ async function getStatusFromGmailLabels(
 async function getOrCreateEmailFromGmail(
   userId: string,
   messageId: string,
-  mailboxId: string
+  mailboxId: string,
 ): Promise<Email> {
   // Try to check if email exists in MongoDB
   let existingEmail = null;
@@ -466,7 +431,7 @@ async function getOrCreateEmailFromGmail(
         subject: existingEmail.subject,
         body: existingEmail.body,
         preview: stripHtml(
-          existingEmail.bodySnippet || existingEmail.body
+          existingEmail.bodySnippet || existingEmail.body,
         ).substring(0, 150),
         timestamp: existingEmail.timestamp.toISOString(),
         isRead: existingEmail.isRead,
@@ -486,7 +451,7 @@ async function getOrCreateEmailFromGmail(
   } catch (error) {
     console.warn(
       "MongoDB query failed, fetching from Gmail without DB cache:",
-      error
+      error,
     );
     // Continue to fetch from Gmail
   }
@@ -505,17 +470,14 @@ async function getOrCreateEmailFromGmail(
   try {
     embedding = await embeddingService.generateEmailEmbedding(
       parsedEmail.subject,
-      parsedEmail.body
+      parsedEmail.body,
     );
     embeddingModel = embeddingService.getModel();
     embeddingDim = embedding.length;
-    console.log(
-      `Generated embedding for email ${parsedEmail.id} (model: ${embeddingModel}, dim: ${embeddingDim})`
-    );
   } catch (error) {
     console.warn(
       `Failed to generate embedding for email ${parsedEmail.id}:`,
-      error
+      error,
     );
     // Continue without embedding - semantic search won't work for this email but other features will
   }
@@ -525,7 +487,7 @@ async function getOrCreateEmailFromGmail(
     const labels = gmailMessage.labelIds || [];
 
     // Determine status based on Gmail labels and Kanban configuration
-    const status = await getStatusFromGmailLabels(userId, labels);
+    const status = await getStatusFromGmailLabels(userId, labels, mailboxId);
 
     const newEmail = new EmailModel({
       emailId: parsedEmail.id,
@@ -556,11 +518,10 @@ async function getOrCreateEmailFromGmail(
     });
 
     await newEmail.save();
-    console.log(`Email ${parsedEmail.id} saved to MongoDB`);
   } catch (error) {
     console.warn(
       "Failed to save email to MongoDB, continuing without persistence:",
-      error
+      error,
     );
     // Continue anyway - user still gets the email from Gmail
   }
@@ -596,7 +557,6 @@ setInterval(async () => {
       email.status = "inbox";
       email.snoozeUntil = null;
       await email.save();
-      console.log(`Email ${email.emailId} restored from snooze`);
     }
   } catch (error) {
     console.error("Error checking expired snoozes:", error);
@@ -637,7 +597,7 @@ router.get(
           const result = await gmailService.listMessages(
             userId,
             mailboxId,
-            limitNum
+            limitNum,
           );
 
           // Fetch or create emails from DB with AI summaries
@@ -667,7 +627,7 @@ router.get(
       // Fallback to mock data
       // Verify mailbox belongs to user
       const mailbox = mailboxesData.find(
-        (m) => m.id === mailboxId && m.userId === userId
+        (m) => m.id === mailboxId && m.userId === userId,
       );
 
       if (!mailbox) {
@@ -680,13 +640,13 @@ router.get(
 
       // Filter emails by mailbox and user
       const mailboxEmails = emails.filter(
-        (email) => email.mailboxId === mailboxId && email.userId === userId
+        (email) => email.mailboxId === mailboxId && email.userId === userId,
       );
 
       // Sort by timestamp (newest first)
       mailboxEmails.sort(
         (a, b) =>
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
       );
 
       // Pagination
@@ -711,7 +671,7 @@ router.get(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // GET /api/emails/:id - Get specific email by ID
@@ -739,7 +699,7 @@ router.get(
           const labelIds = message.labelIds || [];
           const primaryLabel =
             labelIds.find((l) =>
-              ["INBOX", "SENT", "DRAFT", "TRASH", "SPAM"].includes(l)
+              ["INBOX", "SENT", "DRAFT", "TRASH", "SPAM"].includes(l),
             ) || "INBOX";
           const email = parseGmailMessage(message, userId, primaryLabel);
 
@@ -776,7 +736,7 @@ router.get(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // PATCH /api/emails/:id - Update email (mark as read/unread, star/unstar)
@@ -824,13 +784,13 @@ router.patch(
             userId,
             id,
             addLabelIds,
-            removeLabelIds
+            removeLabelIds,
           );
           const message = await gmailService.getMessage(userId, id);
           const labelIds = message.labelIds || [];
           const primaryLabel =
             labelIds.find((l) =>
-              ["INBOX", "SENT", "DRAFT", "TRASH", "SPAM"].includes(l)
+              ["INBOX", "SENT", "DRAFT", "TRASH", "SPAM"].includes(l),
             ) || "INBOX";
           const email = parseGmailMessage(message, userId, primaryLabel);
 
@@ -847,7 +807,7 @@ router.patch(
 
       // Fallback to mock data
       const emailIndex = emails.findIndex(
-        (e) => e.id === id && e.userId === userId
+        (e) => e.id === id && e.userId === userId,
       );
 
       if (emailIndex === -1) {
@@ -877,7 +837,7 @@ router.patch(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // POST /api/emails/send - Send an email
@@ -913,11 +873,11 @@ router.post(
 
           // Extract email addresses from EmailAddress objects
           const toEmails = to.map((addr: any) =>
-            typeof addr === "string" ? addr : addr.email
+            typeof addr === "string" ? addr : addr.email,
           );
           const ccEmails = cc
             ? cc.map((addr: any) =>
-                typeof addr === "string" ? addr : addr.email
+                typeof addr === "string" ? addr : addr.email,
               )
             : undefined;
 
@@ -960,7 +920,7 @@ router.post(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // DELETE /api/emails/:id - Delete email (move to trash)
@@ -998,7 +958,7 @@ router.delete(
 
       // Fallback to mock data
       const emailIndex = emails.findIndex(
-        (e) => e.id === id && e.userId === userId
+        (e) => e.id === id && e.userId === userId,
       );
 
       if (emailIndex === -1) {
@@ -1011,7 +971,7 @@ router.delete(
 
       // Find trash mailbox
       const trashMailbox = mailboxesData.find(
-        (m) => m.name === "Trash" && m.userId === userId
+        (m) => m.name === "Trash" && m.userId === userId,
       );
 
       if (trashMailbox) {
@@ -1033,7 +993,7 @@ router.delete(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // POST /api/emails/bulk-action - Bulk actions on multiple emails
@@ -1062,7 +1022,7 @@ router.post("/emails/bulk-action", (req: Request, res: Response): void => {
 
     emailIds.forEach((emailId) => {
       const emailIndex = emails.findIndex(
-        (e) => e.id === emailId && e.userId === userId
+        (e) => e.id === emailId && e.userId === userId,
       );
 
       if (emailIndex !== -1) {
@@ -1085,7 +1045,7 @@ router.post("/emails/bulk-action", (req: Request, res: Response): void => {
             break;
           case "delete":
             const trashMailbox = mailboxesData.find(
-              (m) => m.name === "Trash" && m.userId === userId
+              (m) => m.name === "Trash" && m.userId === userId,
             );
             if (trashMailbox) {
               emails[emailIndex].mailboxId = trashMailbox.id;
@@ -1141,7 +1101,7 @@ router.get(
       const attachment = await gmailService.getAttachment(
         userId,
         messageId,
-        attachmentId
+        attachmentId,
       );
 
       if (!attachment.data) {
@@ -1159,7 +1119,7 @@ router.get(
       res.setHeader("Content-Type", "application/octet-stream");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="attachment_${attachmentId}"`
+        `attachment; filename="attachment_${attachmentId}"`,
       );
       res.send(buffer);
     } catch (error) {
@@ -1169,7 +1129,7 @@ router.get(
         message: "Failed to download attachment",
       });
     }
-  }
+  },
 );
 
 // PATCH /api/emails/:id/status - Update email status for Kanban workflow
@@ -1205,7 +1165,7 @@ router.patch(
         res.status(400).json({
           success: false,
           message: `Invalid status. Must be one of: ${validStatuses.join(
-            ", "
+            ", ",
           )}`,
         });
         return;
@@ -1273,7 +1233,7 @@ router.patch(
           if (kanbanConfig) {
             // Find the column that matches the new status
             const targetColumn = kanbanConfig.columns.find(
-              (col) => col.id === status
+              (col) => col.id === status,
             );
 
             if (targetColumn && targetColumn.gmailLabel) {
@@ -1287,13 +1247,7 @@ router.patch(
                 userId,
                 id,
                 [targetColumn.gmailLabel], // Add this label
-                labelsToRemove // Remove other column labels
-              );
-
-              console.log(
-                `Synced Gmail labels for email ${id}: Added ${
-                  targetColumn.gmailLabel
-                }, Removed ${labelsToRemove.join(", ")}`
+                labelsToRemove, // Remove other column labels
               );
             }
           }
@@ -1324,7 +1278,7 @@ router.patch(
         body: emailDoc.body,
         preview: stripHtml(emailDoc.bodySnippet || emailDoc.body).substring(
           0,
-          150
+          150,
         ),
         timestamp: emailDoc.timestamp.toISOString(),
         isRead: emailDoc.isRead,
@@ -1352,7 +1306,7 @@ router.patch(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // POST /api/emails/:id/snooze - Snooze an email until a specific time
@@ -1429,7 +1383,7 @@ router.post(
         body: emailDoc.body,
         preview: stripHtml(emailDoc.bodySnippet || emailDoc.body).substring(
           0,
-          150
+          150,
         ),
         timestamp: emailDoc.timestamp.toISOString(),
         isRead: emailDoc.isRead,
@@ -1458,7 +1412,7 @@ router.post(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // POST /api/emails/:id/summarize - Generate AI summary for an email (on-demand)
@@ -1501,7 +1455,7 @@ router.post(
       // Fallback to in-memory emails
       if (!email) {
         const emailIndex = emails.findIndex(
-          (e) => e.id === id && e.userId === userId
+          (e) => e.id === id && e.userId === userId,
         );
 
         if (emailIndex === -1) {
@@ -1516,13 +1470,10 @@ router.post(
       }
 
       // Generate summary using AI (ephemeral - not saved to DB)
-      console.log(`Generating AI summary for email ${id}...`);
       const summary = await aiSummarization.generateSummary(
         email.body,
-        email.subject
+        email.subject,
       );
-
-      console.log(`✓ Summary generated for email ${id} (not persisted)`);
 
       // Return summary without saving to database
       res.json({
@@ -1539,7 +1490,7 @@ router.post(
         message: "Failed to generate summary. Please try again.",
       });
     }
-  }
+  },
 );
 
 // POST /api/emails/batch-summarize - Generate summaries for multiple emails
@@ -1592,7 +1543,7 @@ router.post(
 
       // Generate summaries in batch (ephemeral - not saved to DB)
       const summaries = await aiSummarization.batchSummarize(
-        emailDocs.map((doc) => ({ body: doc.body, subject: doc.subject }))
+        emailDocs.map((doc) => ({ body: doc.body, subject: doc.subject })),
       );
 
       // Return summaries without saving to database
@@ -1600,8 +1551,6 @@ router.post(
         id: doc.emailId,
         summary: summaries[index],
       }));
-
-      console.log(`✓ Generated ${results.length} summaries (not persisted)`);
 
       res.json({
         success: true,
@@ -1614,7 +1563,7 @@ router.post(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // GET /api/emails/by-status/:status - Get emails by status (for Kanban view)
@@ -1642,18 +1591,24 @@ router.get(
         await kanbanConfig.save();
       }
 
-      // Extract valid statuses from user's Kanban columns
-      const validStatuses = kanbanConfig.columns.map((col) => col.status);
+      // Find matching column with case-insensitive comparison
+      const matchedColumn = kanbanConfig.columns.find(
+        (col) => col.status.toLowerCase() === status.toLowerCase(),
+      );
 
-      if (!validStatuses.includes(status)) {
+      if (!matchedColumn) {
+        const validStatuses = kanbanConfig.columns.map((col) => col.status);
         res.status(400).json({
           success: false,
           message: `Invalid status. Must be one of: ${validStatuses.join(
-            ", "
+            ", ",
           )}`,
         });
         return;
       }
+
+      // Use the correctly-cased status from the config
+      const normalizedStatus = matchedColumn.status;
 
       // Auto-expire snoozed emails that have passed their snoozeUntil time
       try {
@@ -1668,13 +1623,10 @@ router.get(
               status: "inbox",
               snoozeUntil: null,
             },
-          }
+          },
         );
 
         if (result.modifiedCount > 0) {
-          console.log(
-            `✓ Auto-expired ${result.modifiedCount} snoozed email(s) back to inbox for user ${userId}`
-          );
         }
       } catch (error) {
         console.warn("Failed to auto-expire snoozes:", error);
@@ -1686,14 +1638,19 @@ router.get(
       try {
         dbEmails = await EmailModel.find({
           userId: userId,
-          status: status,
+          status: {
+            $in: [
+              normalizedStatus.toLowerCase(),
+              normalizedStatus.toUpperCase(),
+            ],
+          },
         })
           .sort({ timestamp: -1 })
           .limit(100);
       } catch (error) {
         console.warn(
           "MongoDB query failed for by-status, returning empty:",
-          error
+          error,
         );
         // Return empty array if MongoDB not available
         res.json({
@@ -1749,7 +1706,7 @@ router.get(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 export default router;

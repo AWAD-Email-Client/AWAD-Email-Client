@@ -55,7 +55,7 @@ const EmailList: React.FC<EmailListProps> = ({
 
   const handleGenerateSummary = async (
     e: React.MouseEvent,
-    emailId: string
+    emailId: string,
   ) => {
     e.stopPropagation();
     if (!onGenerateSummary || generatingIds.has(emailId)) return;
@@ -84,7 +84,7 @@ const EmailList: React.FC<EmailListProps> = ({
     setSelectedIds((prev) =>
       prev.includes(emailId)
         ? prev.filter((id) => id !== emailId)
-        : [...prev, emailId]
+        : [...prev, emailId],
     );
   };
 
@@ -107,7 +107,7 @@ const EmailList: React.FC<EmailListProps> = ({
     (email) =>
       email.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
       email.from.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      email.preview.toLowerCase().includes(searchQuery.toLowerCase())
+      email.preview.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
@@ -221,7 +221,7 @@ const EmailList: React.FC<EmailListProps> = ({
                     flex items-start gap-3 p-4 cursor-pointer transition-colors
                     ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"}
                   `}
-                  style={{ scrollMarginBlock: '100px' }}
+                  style={{ scrollMarginBlock: "100px" }}
                   onClick={() => onSelectEmail(email)}
                 >
                   {/* Checkbox */}
@@ -303,7 +303,7 @@ const EmailList: React.FC<EmailListProps> = ({
                                 AI Summary
                               </span>
                             </div>
-                            <p className="text-xs text-gray-700 line-clamp-2">
+                            <p className="text-xs text-gray-700">
                               {email.summary}
                             </p>
                           </div>

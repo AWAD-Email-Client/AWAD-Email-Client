@@ -10,10 +10,10 @@ import {
   Paperclip,
   Mail,
   Download,
-  Sparkles,
-  Loader2,
+  Eye,
+  X,
 } from "lucide-react";
-import type { Email } from "../../types";
+import type { Email, Attachment } from "../../types";
 import apiClient from "../../api/axios";
 
 interface EmailDetailProps {
@@ -31,53 +31,22 @@ const EmailDetail: React.FC<EmailDetailProps> = ({
   onDelete,
   onReply,
   onForward,
-  onEmailUpdate,
 }) => {
-  const [generatingSummary, setGeneratingSummary] = useState(false);
-  const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [localSummary, setLocalSummary] = useState<string | null>(null);
-  const handleGenerateSummary = async () => {
-    if (!email) return;
-
-    setGeneratingSummary(true);
-    setSummaryError(null);
-
-    try {
-      const response = await apiClient.post(`/emails/${email.id}/summarize`);
-
-      if (response.data.success) {
-        const newSummary = response.data.data.summary;
-        setLocalSummary(newSummary);
-
-        // Update parent component with new summary
-        if (onEmailUpdate) {
-          onEmailUpdate({
-            ...email,
-            summary: newSummary,
-          });
-        }
-      }
-    } catch (error: any) {
-      console.error("Failed to generate summary:", error);
-      setSummaryError(
-        error.response?.data?.message ||
-          "Failed to generate summary. Please try again."
-      );
-    } finally {
-      setGeneratingSummary(false);
-    }
-  };
+  const [viewingAttachment, setViewingAttachment] = useState<{
+    attachment: Attachment;
+    blobUrl: string;
+  } | null>(null);
 
   const handleDownloadAttachment = async (
     attachmentId: string,
-    fileName: string
+    fileName: string,
   ) => {
     try {
       const response = await apiClient.get(
         `/emails/${email?.id}/attachments/${attachmentId}`,
         {
           responseType: "blob",
-        }
+        },
       );
 
       // Create a blob URL and trigger download
@@ -94,6 +63,45 @@ const EmailDetail: React.FC<EmailDetailProps> = ({
       console.error("Failed to download attachment:", error);
       alert("Failed to download attachment. Please try again.");
     }
+  };
+
+  const handleViewAttachment = async (attachment: Attachment) => {
+    if (!attachment.id || !email) return;
+
+    try {
+      const response = await apiClient.get(
+        `/emails/${email.id}/attachments/${attachment.id}`,
+        {
+          responseType: "blob",
+        },
+      );
+
+      // Create a blob URL for viewing
+      const blob = new Blob([response.data], { type: attachment.type });
+      const blobUrl = window.URL.createObjectURL(blob);
+
+      setViewingAttachment({ attachment, blobUrl });
+    } catch (error) {
+      console.error("Failed to view attachment:", error);
+      alert("Failed to view attachment. Please try again.");
+    }
+  };
+
+  const handleCloseViewer = () => {
+    if (viewingAttachment) {
+      window.URL.revokeObjectURL(viewingAttachment.blobUrl);
+      setViewingAttachment(null);
+    }
+  };
+
+  const isViewableFileType = (type: string): boolean => {
+    return (
+      type.startsWith("image/") ||
+      type === "application/pdf" ||
+      type.startsWith("text/") ||
+      type === "application/json" ||
+      type === "application/xml"
+    );
   };
 
   if (!email) {
@@ -203,7 +211,7 @@ const EmailDetail: React.FC<EmailDetailProps> = ({
       </div>
 
       {/* AI Summary Section */}
-      <div className="border-t border-gray-200 p-6 bg-gradient-to-r from-purple-50 to-blue-50">
+      {/* <div className="border-t border-gray-200 p-6 bg-gradient-to-r from-purple-50 to-blue-50">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
             <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
@@ -251,46 +259,150 @@ const EmailDetail: React.FC<EmailDetailProps> = ({
             )}
           </button>
         </div>
-      </div>
+      </div> */}
 
-      {/* Email Body */}
-      <div id="email-body-container" className="flex-1 overflow-y-auto scrollbar-thin p-6">
+      <div className="flex-1 overflow-scroll">
+        {/* Email Body */}
         <div
-          className="prose prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: sanitizedBody }}
-        />
+          id="email-body-container"
+          className="flex-1 overflow-y-auto scrollbar-thin p-6"
+        >
+          <div
+            className="prose prose-sm max-w-none"
+            dangerouslySetInnerHTML={{ __html: sanitizedBody }}
+          />
+        </div>
+
+        {/* Attachments */}
+        {email.attachments.length > 0 && (
+          <div className="border-t border-gray-200 p-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <Paperclip className="w-4 h-4" />
+              Attachments ({email.attachments.length})
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {email.attachments.map((attachment, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Paperclip className="w-5 h-5 text-gray-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {attachment.name}
+                    </p>
+                    <p className="text-xs text-gray-500">{attachment.size}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {attachment.id && isViewableFileType(attachment.type) && (
+                      <button
+                        onClick={() => handleViewAttachment(attachment)}
+                        className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
+                        title="View attachment"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    )}
+                    {attachment.id && (
+                      <button
+                        onClick={() =>
+                          handleDownloadAttachment(
+                            attachment.id!,
+                            attachment.name,
+                          )
+                        }
+                        className="p-2 hover:bg-gray-100 text-gray-600 rounded-lg transition-colors"
+                        title="Download attachment"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Attachments */}
-      {email.attachments.length > 0 && (
-        <div className="border-t border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Paperclip className="w-4 h-4" />
-            Attachments ({email.attachments.length})
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {email.attachments.map((attachment, index) => (
-              <button
-                key={index}
-                onClick={() =>
-                  attachment.id &&
-                  handleDownloadAttachment(attachment.id, attachment.name)
-                }
-                disabled={!attachment.id}
-                className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer text-left disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Paperclip className="w-5 h-5 text-gray-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {attachment.name}
+      {/* Attachment Viewer Modal */}
+      {viewingAttachment && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+          onClick={handleCloseViewer}
+        >
+          <div
+            className="bg-white rounded-lg max-w-6xl max-h-[90vh] w-full flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <Paperclip className="w-5 h-5 text-gray-600 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 truncate">
+                    {viewingAttachment.attachment.name}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    {viewingAttachment.attachment.size}
                   </p>
-                  <p className="text-xs text-gray-500">{attachment.size}</p>
                 </div>
-                <Download className="w-4 h-4 text-gray-400 flex-shrink-0" />
-              </button>
-            ))}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() =>
+                    viewingAttachment.attachment.id &&
+                    handleDownloadAttachment(
+                      viewingAttachment.attachment.id,
+                      viewingAttachment.attachment.name,
+                    )
+                  }
+                  className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+                >
+                  <Download className="w-4 h-4" />
+                  Download
+                </button>
+                <button
+                  onClick={handleCloseViewer}
+                  className="p-2 hover:bg-gray-100 text-gray-600 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-auto p-4 bg-gray-50">
+              {viewingAttachment.attachment.type.startsWith("image/") && (
+                <div className="flex items-center justify-center h-full">
+                  <img
+                    src={viewingAttachment.blobUrl}
+                    alt={viewingAttachment.attachment.name}
+                    className="max-w-full max-h-full object-contain"
+                  />
+                </div>
+              )}
+
+              {viewingAttachment.attachment.type === "application/pdf" && (
+                <iframe
+                  src={viewingAttachment.blobUrl}
+                  className="w-full h-full min-h-[70vh] border-0 rounded"
+                  title={viewingAttachment.attachment.name}
+                />
+              )}
+
+              {(viewingAttachment.attachment.type.startsWith("text/") ||
+                viewingAttachment.attachment.type === "application/json" ||
+                viewingAttachment.attachment.type === "application/xml") && (
+                <iframe
+                  src={viewingAttachment.blobUrl}
+                  className="w-full h-full min-h-[70vh] border-0 rounded bg-white"
+                  title={viewingAttachment.attachment.name}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

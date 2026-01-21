@@ -128,18 +128,12 @@ router.put("/config", async (req: Request, res: Response): Promise<void> => {
 
     // If statusMigrations provided, update emails with old statuses
     if (statusMigrations && Object.keys(statusMigrations).length > 0) {
-      console.log("🔄 Migrating email statuses:", statusMigrations);
-
       const EmailModel = (await import("../models/Email")).default;
 
       for (const [oldStatus, newStatus] of Object.entries(statusMigrations)) {
         const result = await EmailModel.updateMany(
           { userId, status: oldStatus },
-          { $set: { status: newStatus } }
-        );
-
-        console.log(
-          `✓ Migrated ${result.modifiedCount} emails: "${oldStatus}" → "${newStatus}"`
+          { $set: { status: newStatus } },
         );
       }
     }
@@ -148,7 +142,7 @@ router.put("/config", async (req: Request, res: Response): Promise<void> => {
     const config = await KanbanConfig.findOneAndUpdate(
       { userId },
       { columns },
-      { new: true, upsert: true }
+      { new: true, upsert: true },
     );
 
     res.json({
@@ -226,7 +220,7 @@ router.post(
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
-  }
+  },
 );
 
 /**
@@ -275,7 +269,7 @@ router.delete(
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
-  }
+  },
 );
 
 /**
@@ -341,7 +335,7 @@ router.patch(
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
-  }
+  },
 );
 
 export default router;

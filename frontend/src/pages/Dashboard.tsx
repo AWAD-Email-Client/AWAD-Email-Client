@@ -17,17 +17,26 @@ import { useMailboxes } from "../hooks/useMailboxes";
 import { useMailboxEmails } from "../hooks/useMailboxEmails";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { cacheService } from "../services/cacheService";
-import { useKeyboardShortcuts, type KeyboardActions, type ShortcutContext } from "../hooks/useKeyboardShortcuts";
+import {
+  useKeyboardShortcuts,
+  type KeyboardActions,
+  type ShortcutContext,
+} from "../hooks/useKeyboardShortcuts";
 import KeyboardHelpOverlay from "../components/dashboard/KeyboardHelpOverlay";
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const { socket } = useSocket();
   const isOnline = useOnlineStatus();
-  
+
   const { mailboxes, loading: mailboxesLoading } = useMailboxes();
   const [selectedMailbox, setSelectedMailbox] = useState<Mailbox | null>(null);
-  const { emails, setEmails, loading: emailsLoading, refresh: refreshEmails } = useMailboxEmails(selectedMailbox?.id || null);
+  const {
+    emails,
+    setEmails,
+    loading: emailsLoading,
+    refresh: refreshEmails,
+  } = useMailboxEmails(selectedMailbox?.id || null);
 
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -47,7 +56,7 @@ const Dashboard: React.FC = () => {
 
   // Keyboard Navigation
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [activeZone, setActiveZone] = useState<ShortcutContext>('list');
+  const [activeZone, setActiveZone] = useState<ShortcutContext>("list");
 
   // Select Inbox by default when mailboxes are loaded
   useEffect(() => {
@@ -64,13 +73,14 @@ const Dashboard: React.FC = () => {
     if (!socket) return;
 
     const handleNewEmail = (newEmail: Email) => {
-      console.log("New email received:", newEmail);
-      
       // Show toast notification
-      toast.success(`New email from ${newEmail.from.name || newEmail.from.email}: ${newEmail.subject}`, {
-        duration: 5000,
-        position: 'top-right',
-      });
+      toast.success(
+        `New email from ${newEmail.from.name || newEmail.from.email}: ${newEmail.subject}`,
+        {
+          duration: 5000,
+          position: "top-right",
+        },
+      );
 
       // If we are viewing the Inbox, add the new email to the list
       // Note: In a real app, we should check if the email belongs to the current mailbox
@@ -121,7 +131,7 @@ const Dashboard: React.FC = () => {
           await apiClient.patch(`/emails/${email.id}`, { isRead: true });
           // Update local state
           setEmails(
-            emails.map((e) => (e.id === email.id ? { ...e, isRead: true } : e))
+            emails.map((e) => (e.id === email.id ? { ...e, isRead: true } : e)),
           );
           // Update cache
           await cacheService.saveEmail({ ...emailData, isRead: true });
@@ -143,8 +153,8 @@ const Dashboard: React.FC = () => {
       // Update local state
       setEmails(
         emails.map((e) =>
-          e.id === emailId ? { ...e, isStarred: !e.isStarred } : e
-        )
+          e.id === emailId ? { ...e, isStarred: !e.isStarred } : e,
+        ),
       );
       if (selectedEmail?.id === emailId) {
         setSelectedEmail({
@@ -173,11 +183,11 @@ const Dashboard: React.FC = () => {
   const handleMarkAsRead = async (emailIds: string[], isRead: boolean) => {
     try {
       await Promise.all(
-        emailIds.map((id) => apiClient.patch(`/emails/${id}`, { isRead }))
+        emailIds.map((id) => apiClient.patch(`/emails/${id}`, { isRead })),
       );
       // Update local state
       setEmails(
-        emails.map((e) => (emailIds.includes(e.id) ? { ...e, isRead } : e))
+        emails.map((e) => (emailIds.includes(e.id) ? { ...e, isRead } : e)),
       );
     } catch (error) {
       console.error("Failed to mark emails:", error);
@@ -198,11 +208,6 @@ const Dashboard: React.FC = () => {
     setSearchQuery(query);
 
     try {
-      console.log(
-        `${isSemanticSearch ? "Semantic" : "Fuzzy"} search for:`,
-        query
-      );
-
       let results: Email[];
       if (isSemanticSearch) {
         // Use semantic search
@@ -210,12 +215,11 @@ const Dashboard: React.FC = () => {
       } else {
         // Use fuzzy search
         const response = await apiClient.get(
-          `/search?q=${encodeURIComponent(query)}`
+          `/search?q=${encodeURIComponent(query)}`,
         );
         results = response.data.data || [];
       }
 
-      console.log("Search results:", results.length, "emails");
       setSearchResults(results);
     } catch (error) {
       console.error("Search error:", error);
@@ -267,7 +271,7 @@ const Dashboard: React.FC = () => {
   };
 
   const handleGenerateSummary = async (
-    emailId: string
+    emailId: string,
   ): Promise<string | null> => {
     try {
       const response = await apiClient.post(`/emails/${emailId}/summarize`);
@@ -278,8 +282,8 @@ const Dashboard: React.FC = () => {
         // Update email in the list with new summary
         setEmails(
           emails.map((e) =>
-            e.id === emailId ? { ...e, summary: newSummary } : e
-          )
+            e.id === emailId ? { ...e, summary: newSummary } : e,
+          ),
         );
 
         // Update selected email if it's the same one
@@ -305,14 +309,16 @@ const Dashboard: React.FC = () => {
   // Update active zone based on selection
   useEffect(() => {
     if (!selectedEmail) {
-      setActiveZone('list');
+      setActiveZone("list");
     }
   }, [selectedEmail]);
 
   const handleKeyboardActions: KeyboardActions = {
     nextItem: () => {
       if (!emails.length) return;
-      const currentIndex = selectedEmail ? emails.findIndex(e => e.id === selectedEmail.id) : -1;
+      const currentIndex = selectedEmail
+        ? emails.findIndex((e) => e.id === selectedEmail.id)
+        : -1;
       const nextIndex = Math.min(emails.length - 1, currentIndex + 1);
       if (nextIndex !== currentIndex) {
         handleEmailSelect(emails[nextIndex]);
@@ -320,10 +326,12 @@ const Dashboard: React.FC = () => {
     },
     prevItem: () => {
       if (!emails.length) return;
-      const currentIndex = selectedEmail ? emails.findIndex(e => e.id === selectedEmail.id) : -1;
+      const currentIndex = selectedEmail
+        ? emails.findIndex((e) => e.id === selectedEmail.id)
+        : -1;
       if (currentIndex === -1) {
-          handleEmailSelect(emails[0]);
-          return;
+        handleEmailSelect(emails[0]);
+        return;
       }
       const prevIndex = Math.max(0, currentIndex - 1);
       if (prevIndex !== currentIndex) {
@@ -332,15 +340,15 @@ const Dashboard: React.FC = () => {
     },
     openItem: () => {
       if (selectedEmail) {
-        setActiveZone('message');
+        setActiveZone("message");
       } else if (emails.length > 0) {
-         handleEmailSelect(emails[0]);
-         setActiveZone('message');
+        handleEmailSelect(emails[0]);
+        setActiveZone("message");
       }
     },
     goBack: () => {
-      if (activeZone === 'message') {
-        setActiveZone('list');
+      if (activeZone === "message") {
+        setActiveZone("list");
       } else {
         setSelectedEmail(null);
       }
@@ -349,46 +357,52 @@ const Dashboard: React.FC = () => {
       if (selectedEmail) handleDeleteEmail(selectedEmail.id);
     },
     archive: () => {
-       // Implement archive if available
+      // Implement archive if available
     },
     reply: () => {
-       if (selectedEmail) handleReply(selectedEmail);
+      if (selectedEmail) handleReply(selectedEmail);
     },
     replyAll: () => {
-       if (selectedEmail) handleReply(selectedEmail, true);
+      if (selectedEmail) handleReply(selectedEmail, true);
     },
     forward: () => {
-       if (selectedEmail) handleForward(selectedEmail);
+      if (selectedEmail) handleForward(selectedEmail);
     },
     markRead: () => {
-       if (selectedEmail) handleMarkAsRead([selectedEmail.id], true);
+      if (selectedEmail) handleMarkAsRead([selectedEmail.id], true);
     },
     markUnread: () => {
-       if (selectedEmail) handleMarkAsRead([selectedEmail.id], false);
+      if (selectedEmail) handleMarkAsRead([selectedEmail.id], false);
     },
     star: () => {
-       if (selectedEmail) handleToggleStar(selectedEmail.id);
+      if (selectedEmail) handleToggleStar(selectedEmail.id);
     },
     goToInbox: () => {
-       const inbox = mailboxes.find(mb => mb.name === 'INBOX');
-       if (inbox) handleMailboxSelect(inbox);
+      const inbox = mailboxes.find((mb) => mb.name === "INBOX");
+      if (inbox) handleMailboxSelect(inbox);
     },
     goToSent: () => {
-       const sent = mailboxes.find(mb => mb.name === 'SENT');
-       if (sent) handleMailboxSelect(sent);
+      const sent = mailboxes.find((mb) => mb.name === "SENT");
+      if (sent) handleMailboxSelect(sent);
     },
     goToDrafts: () => {
-       const drafts = mailboxes.find(mb => mb.name === 'DRAFTS');
-       if (drafts) handleMailboxSelect(drafts);
+      const drafts = mailboxes.find((mb) => mb.name === "DRAFTS");
+      if (drafts) handleMailboxSelect(drafts);
     },
     search: () => {
-       const searchInput = document.querySelector('input[placeholder="Search emails..."]') as HTMLInputElement;
-       if (searchInput) searchInput.focus();
+      const searchInput = document.querySelector(
+        'input[placeholder="Search emails..."]',
+      ) as HTMLInputElement;
+      if (searchInput) searchInput.focus();
     },
     showHelp: () => setShowShortcuts(true),
   };
 
-  useKeyboardShortcuts(handleKeyboardActions, activeZone, !composeOpen && !showShortcuts);
+  useKeyboardShortcuts(
+    handleKeyboardActions,
+    activeZone,
+    !composeOpen && !showShortcuts,
+  );
 
   if (mailboxesLoading) {
     return (
@@ -456,7 +470,10 @@ const Dashboard: React.FC = () => {
       </header>
 
       {!isOnline && (
-        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4" role="alert">
+        <div
+          className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4"
+          role="alert"
+        >
           <p className="font-bold">Offline Mode</p>
           <p>You are currently offline. Some features may be unavailable.</p>
         </div>
@@ -506,31 +523,37 @@ const Dashboard: React.FC = () => {
             />
 
             {/* Column 2: Email List (~40%) */}
-            <div className="flex-1 flex flex-col min-w-0" onClick={() => setActiveZone('list')}>
-            <EmailList
-              emails={emails}
-              loading={emailsLoading}
-              selectedEmail={selectedEmail}
-              onSelectEmail={handleEmailSelect}
-              onToggleStar={handleToggleStar}
-              onDelete={handleDeleteEmail}
-              onMarkAsRead={handleMarkAsRead}
-              onRefresh={handleRefresh}
-              onCompose={handleCompose}
-              onGenerateSummary={handleGenerateSummary}
-            />
+            <div
+              className="flex-1 flex flex-col min-w-0"
+              onClick={() => setActiveZone("list")}
+            >
+              <EmailList
+                emails={emails}
+                loading={emailsLoading}
+                selectedEmail={selectedEmail}
+                onSelectEmail={handleEmailSelect}
+                onToggleStar={handleToggleStar}
+                onDelete={handleDeleteEmail}
+                onMarkAsRead={handleMarkAsRead}
+                onRefresh={handleRefresh}
+                onCompose={handleCompose}
+                onGenerateSummary={handleGenerateSummary}
+              />
             </div>
 
             {/* Column 3: Email Detail (~40%) */}
-            <div className="flex-1 flex flex-col min-w-0" onClick={() => setActiveZone('message')}>
-            <EmailDetail
-              email={selectedEmail}
-              onToggleStar={handleToggleStar}
-              onDelete={handleDeleteEmail}
-              onReply={handleReply}
-              onForward={handleForward}
-              onEmailUpdate={handleEmailUpdate}
-            />
+            <div
+              className="flex-1 flex flex-col min-w-0"
+              onClick={() => setActiveZone("message")}
+            >
+              <EmailDetail
+                email={selectedEmail}
+                onToggleStar={handleToggleStar}
+                onDelete={handleDeleteEmail}
+                onReply={handleReply}
+                onForward={handleForward}
+                onEmailUpdate={handleEmailUpdate}
+              />
             </div>
           </>
         )}
@@ -553,7 +576,7 @@ const Dashboard: React.FC = () => {
           onClick={() => setSelectedEmail(null)}
         >
           <div
-            className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+            className="flex flex-col bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <EmailDetail
@@ -578,8 +601,11 @@ const Dashboard: React.FC = () => {
 
       {/* Toast Notifications */}
       <Toaster position="top-right" reverseOrder={false} />
-      
-      <KeyboardHelpOverlay isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
+
+      <KeyboardHelpOverlay
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+      />
     </div>
   );
 };

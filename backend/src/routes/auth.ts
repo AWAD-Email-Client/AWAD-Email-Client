@@ -21,9 +21,6 @@ import notificationManager from "../services/notification/NotificationManager";
 const router = express.Router();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// In-memory store for refresh tokens (in production, use Redis or database)
-const refreshTokenStore = new Map<string, string>();
-
 // Helper function to generate tokens
 const generateTokens = (userId: string, email: string) => {
   const SECRET = process.env.JWT_SECRET!;
@@ -83,40 +80,41 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
     // }
 
     if (userDoc) {
-    // Use MongoDB user
-    // Verify password
-    if (!userDoc.password) {
-      res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-      return;
-    }
+      // Use MongoDB user
+      // Verify password
+      if (!userDoc.password) {
+        res.status(401).json({
+          success: false,
+          message: "Invalid email or password",
+        });
+        return;
+      }
 
-    const isValidPassword = await bcrypt.compare(password, userDoc.password);
+      const isValidPassword = await bcrypt.compare(password, userDoc.password);
 
-    if (!isValidPassword) {
-      res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-      return;
-    }
+      if (!isValidPassword) {
+        res.status(401).json({
+          success: false,
+          message: "Invalid email or password",
+        });
+        return;
+      }
 
-    // Convert to User type for response
-    // 
-    user = {
-      id: userDoc._id.toString(),
-      email: userDoc.email,
-      password: userDoc.password,
-      name: userDoc.name,
-      googleId: userDoc.googleId || null,
-      createdAt: userDoc.createdAt.toISOString(),
-    };
-
+      // Convert to User type for response
+      //
+      user = {
+        id: userDoc._id.toString(),
+        email: userDoc.email,
+        password: userDoc.password,
+        name: userDoc.name,
+        googleId: userDoc.googleId || null,
+        createdAt: userDoc.createdAt.toISOString(),
+      };
     } else {
       // Fallback to demo data
-      const demoUser = usersData.find(u => u.email.toLowerCase() === email.toLowerCase());
+      const demoUser = usersData.find(
+        (u) => u.email.toLowerCase() === email.toLowerCase(),
+      );
 
       if (!demoUser) {
         res.status(401).json({
@@ -150,9 +148,6 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
 
     // Generate tokens
     const { accessToken, refreshToken } = generateTokens(user.id, user.email);
-
-    // Store refresh token
-    refreshTokenStore.set(refreshToken, user.id);
 
     const response: AuthResponse = {
       success: true,
@@ -212,7 +207,7 @@ router.get(
 
       if (!tokens.refresh_token || !tokens.access_token) {
         res.redirect(
-          `${process.env.FRONTEND_URL}/login?error=no_refresh_token`
+          `${process.env.FRONTEND_URL}/login?error=no_refresh_token`,
         );
         return;
       }
@@ -227,14 +222,11 @@ router.get(
           headers: {
             Authorization: `Bearer ${tokens.access_token}`,
           },
-        }
+        },
       );
 
       const email = userInfoResponse.data.email;
 
-      console.log("Google OAuth user email:", email);
-      console.log("Google OAuth tokens:", tokens);
-      console.log("Google OAuth user info:", userInfoResponse.data);
       if (!email) {
         res.redirect(`${process.env.FRONTEND_URL}/login?error=no_email`);
         return;
@@ -273,17 +265,16 @@ router.get(
         email,
         tokens.refresh_token,
         tokens.access_token,
-        tokens.expiry_date ?? undefined
+        tokens.expiry_date ?? undefined,
       );
 
       // Start watching for email updates
-      notificationManager.startWatch(user.id).catch(err => console.error("Failed to start watch:", err));
+      notificationManager
+        .startWatch(user.id)
+        .catch((err) => console.error("Failed to start watch:", err));
 
       // Generate app tokens
       const { accessToken, refreshToken } = generateTokens(user.id, user.email);
-
-      // Store app refresh token
-      refreshTokenStore.set(refreshToken, user.id);
 
       // Redirect to frontend with tokens in URL params (frontend will store them)
       const redirectUrl = `${process.env.FRONTEND_URL}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`;
@@ -292,7 +283,7 @@ router.get(
       console.error("Google OAuth callback error:", error);
       res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
     }
-  }
+  },
 );
 
 // POST /api/auth/google - Google OAuth Login (Legacy - client-side token verification)
@@ -387,9 +378,6 @@ router.post("/google", async (req: Request, res: Response): Promise<void> => {
     // Generate tokens
     const { accessToken, refreshToken } = generateTokens(user.id, user.email);
 
-    // Store refresh token
-    refreshTokenStore.set(refreshToken, user.id);
-
     const response: AuthResponse = {
       success: true,
       accessToken,
@@ -420,22 +408,11 @@ router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Verify refresh token exists in store
-    const userId = refreshTokenStore.get(refreshToken);
-
-    if (!userId) {
-      res.status(401).json({
-        success: false,
-        message: "Invalid refresh token",
-      });
-      return;
-    }
-
     // Verify refresh token signature
     try {
       const decoded = jwt.verify(
         refreshToken,
-        process.env.JWT_REFRESH_SECRET as string
+        process.env.JWT_REFRESH_SECRET as string,
       ) as JwtPayload;
 
       // Generate new access token
@@ -445,7 +422,7 @@ router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
       const accessToken = jwt.sign(
         { userId: decoded.userId, email: decoded.email },
         SECRET,
-        { expiresIn: ACCESS_EXPIRY }
+        { expiresIn: ACCESS_EXPIRY },
       );
 
       const response: RefreshResponse = {
@@ -455,9 +432,6 @@ router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
 
       res.json(response);
     } catch (error) {
-      // Remove invalid refresh token
-      refreshTokenStore.delete(refreshToken);
-
       res.status(401).json({
         success: false,
         message: "Invalid or expired refresh token",
@@ -475,19 +449,7 @@ router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
 // POST /api/auth/logout - Logout
 router.post("/logout", async (req: Request, res: Response): Promise<void> => {
   try {
-    const { refreshToken }: RefreshTokenRequest = req.body;
     const authHeader = req.headers.authorization;
-
-    if (refreshToken) {
-      // Remove app refresh token from store
-      const userId = refreshTokenStore.get(refreshToken);
-      refreshTokenStore.delete(refreshToken);
-
-      // Also remove Gmail tokens
-      if (userId) {
-        tokenStore.deleteToken(userId);
-      }
-    }
 
     // Extract userId from access token if available
     if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -495,7 +457,7 @@ router.post("/logout", async (req: Request, res: Response): Promise<void> => {
       try {
         const decoded = jwt.verify(
           token,
-          process.env.JWT_SECRET as string
+          process.env.JWT_SECRET as string,
         ) as JwtPayload;
 
         // Remove Gmail tokens for this user
