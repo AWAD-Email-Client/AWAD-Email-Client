@@ -61,7 +61,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 }) => {
   const [columns, setColumns] = useState<Column[]>([]);
   const [emailsByStatus, setEmailsByStatus] = useState<Record<string, Email[]>>(
-    {}
+    {},
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -153,14 +153,14 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
         } catch (error) {
           console.warn(
             "Failed to sync mailbox, continuing with DB data:",
-            error
+            error,
           );
         }
       }
 
       // Now fetch emails by status from MongoDB
       const statusPromises = columns.map((col) =>
-        emailsAPI.fetchEmailsByStatus(col.status as EmailStatus)
+        emailsAPI.fetchEmailsByStatus(col.status as EmailStatus),
       );
 
       const results = await Promise.all(statusPromises);
@@ -186,7 +186,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   const handleGenerateSummary = async (
     e: React.MouseEvent,
-    emailId: string
+    emailId: string,
   ) => {
     e.stopPropagation();
     if (!onGenerateSummary || generatingIds.has(emailId)) return;
@@ -201,7 +201,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           const updated = { ...prev };
           Object.keys(updated).forEach((status) => {
             updated[status] = updated[status].map((email) =>
-              email.id === emailId ? { ...email, summary } : email
+              email.id === emailId ? { ...email, summary } : email,
             );
           });
           return updated;
@@ -260,7 +260,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
         setEmailsByStatus((prev) => ({
           ...prev,
           [sourceStatus]: prev[sourceStatus].filter(
-            (e) => e.id !== draggingEmail.id
+            (e) => e.id !== draggingEmail.id,
           ),
           snoozed: [
             ...prev.snoozed,
@@ -275,7 +275,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
         // Update status on backend
         await emailsAPI.updateEmailStatus(
           draggingEmail.id,
-          targetStatus as EmailStatus
+          targetStatus as EmailStatus,
         );
 
         // Update local state
@@ -283,7 +283,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
         setEmailsByStatus((prev) => ({
           ...prev,
           [sourceStatus]: prev[sourceStatus].filter(
-            (e) => e.id !== draggingEmail.id
+            (e) => e.id !== draggingEmail.id,
           ),
           [targetStatus]: [
             ...prev[targetStatus],
@@ -353,7 +353,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
               ? prev.snoozed.map((e) =>
                   e.id === emailId
                     ? { ...e, snoozeUntil: snoozeUntil.toISOString() }
-                    : e
+                    : e,
                 )
               : [
                   ...prev.snoozed,
@@ -464,9 +464,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                   AI Summary
                 </span>
               </div>
-              <p className="text-xs text-gray-700 line-clamp-3">
-                {email.summary}
-              </p>
+              <p className="text-xs text-gray-700">{email.summary}</p>
             </div>
           ) : (
             <button
@@ -516,7 +514,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
     if (filterAttachments) {
       filtered = filtered.filter(
-        (email) => email.attachments && email.attachments.length > 0
+        (email) => email.attachments && email.attachments.length > 0,
       );
     }
 
@@ -545,7 +543,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
   // Check if all columns are empty
   const allEmailsCount = Object.values(emailsByStatus).reduce(
     (sum, emails) => sum + emails.length,
-    0
+    0,
   );
   const isEmpty = !loading && allEmailsCount === 0;
 
@@ -584,15 +582,22 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                   className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:border-transparent flex items-center gap-2 min-w-[140px] justify-between"
                 >
                   <span className="font-medium text-gray-700">
-                    {sortBy === "newest" ? "Date: Newest First" : "Date: Oldest First"}
+                    {sortBy === "newest"
+                      ? "Date: Newest First"
+                      : "Date: Oldest First"}
                   </span>
                   <svg
-                    className={`w-4 h-4 transition-transform ${sortDropdownOpen ? 'rotate-180' : ''}`}
+                    className={`w-4 h-4 transition-transform ${sortDropdownOpen ? "rotate-180" : ""}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
                   </svg>
                 </button>
 
@@ -609,7 +614,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                           setSortDropdownOpen(false);
                         }}
                         className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors ${
-                          sortBy === "newest" ? "bg-primary-50 text-primary-700 font-medium" : "text-gray-700"
+                          sortBy === "newest"
+                            ? "bg-primary-50 text-primary-700 font-medium"
+                            : "text-gray-700"
                         }`}
                       >
                         Date: Newest First
@@ -620,7 +627,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                           setSortDropdownOpen(false);
                         }}
                         className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors ${
-                          sortBy === "oldest" ? "bg-primary-50 text-primary-700 font-medium" : "text-gray-700"
+                          sortBy === "oldest"
+                            ? "bg-primary-50 text-primary-700 font-medium"
+                            : "text-gray-700"
                         }`}
                       >
                         Date: Oldest First
@@ -734,7 +743,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                   <p className="text-xs text-gray-600">
                     {(() => {
                       const filtered = getFilteredAndSortedEmails(
-                        emailsByStatus[column.status]
+                        emailsByStatus[column.status],
                       );
                       const total = emailsByStatus[column.status].length;
                       return filtered.length !== total
@@ -750,7 +759,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 {(() => {
                   // F3: Apply filters and sorting
                   const filteredSortedEmails = getFilteredAndSortedEmails(
-                    emailsByStatus[column.status]
+                    emailsByStatus[column.status],
                   );
 
                   return filteredSortedEmails.length === 0 ? (

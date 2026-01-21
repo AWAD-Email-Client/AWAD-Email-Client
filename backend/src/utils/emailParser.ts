@@ -31,14 +31,14 @@ export function stripHtml(html: string): string {
 export function parseGmailMessage(
   message: gmail_v1.Schema$Message,
   userId: string,
-  mailboxId: string
+  mailboxId: string,
 ): Email {
   const headers = message.payload?.headers || [];
 
   // Extract header values
   const getHeader = (name: string): string => {
     const header = headers.find(
-      (h) => h.name?.toLowerCase() === name.toLowerCase()
+      (h) => h.name?.toLowerCase() === name.toLowerCase(),
     );
     return header?.value || "";
   };
@@ -86,7 +86,7 @@ export function parseGmailMessage(
     timestamp:
       date || new Date(parseInt(message.internalDate || "0")).toISOString(),
     attachments,
-    status: "inbox",
+    status: mailboxId,
     snoozeUntil: null,
     summary: null,
     gmailLink,
@@ -174,7 +174,7 @@ function extractBody(payload: gmail_v1.Schema$MessagePart | undefined): string {
  */
 function findPart(
   parts: gmail_v1.Schema$MessagePart[],
-  mimeType: string
+  mimeType: string,
 ): gmail_v1.Schema$MessagePart | undefined {
   for (const part of parts) {
     if (part.mimeType === mimeType) {
@@ -194,7 +194,7 @@ function findPart(
  * Extract attachments from message
  */
 function extractAttachments(
-  payload: gmail_v1.Schema$MessagePart | undefined
+  payload: gmail_v1.Schema$MessagePart | undefined,
 ): Attachment[] {
   if (!payload) {
     return [];
@@ -203,7 +203,7 @@ function extractAttachments(
   const attachments: Attachment[] = [];
 
   const extractFromParts = (
-    parts: gmail_v1.Schema$MessagePart[] | undefined
+    parts: gmail_v1.Schema$MessagePart[] | undefined,
   ) => {
     if (!parts) return;
 

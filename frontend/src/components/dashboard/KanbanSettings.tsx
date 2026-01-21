@@ -102,7 +102,7 @@ const generateUniqueStatus = (
   gmailLabel: string | undefined,
   title: string,
   columns: KanbanColumn[],
-  excludeId?: string
+  excludeId?: string,
 ): string => {
   // Priority 1: Use Gmail label if available
   const baseStatus = gmailLabel
@@ -134,10 +134,10 @@ const generateColumnId = (): string => {
 const isGmailLabelUsed = (
   gmailLabel: string,
   columns: KanbanColumn[],
-  excludeColumnId?: string
+  excludeColumnId?: string,
 ): boolean => {
   return columns.some(
-    (col) => col.gmailLabel === gmailLabel && col.id !== excludeColumnId
+    (col) => col.gmailLabel === gmailLabel && col.id !== excludeColumnId,
   );
 };
 
@@ -212,9 +212,6 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
         const originalStatus = originalStatuses[col.id];
         if (originalStatus && originalStatus !== col.status) {
           statusMigrations[originalStatus] = col.status;
-          console.log(
-            `📝 Status migration: "${originalStatus}" → "${col.status}"`
-          );
         }
       });
 
@@ -248,7 +245,11 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
       alert("You must have at least one column!");
       return;
     }
-    if (confirm("Are you sure you want to delete this column?")) {
+    if (
+      confirm(
+        "Are you sure you want to delete this column? Please make sure to move all emails in this column to another column before deleting.",
+      )
+    ) {
       setColumns(columns.filter((col) => col.id !== columnId));
     }
   };
@@ -256,13 +257,13 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
   const handleUpdateColumn = (
     columnId: string,
     field: keyof KanbanColumn,
-    value: string | undefined
+    value: string | undefined,
   ) => {
     // Validate Gmail label uniqueness
     if (field === "gmailLabel" && value && value !== "") {
       if (isGmailLabelUsed(value, columns, columnId)) {
         alert(
-          `Gmail label "${value}" is already used by another column. Each Gmail label can only be mapped to one column.`
+          `Gmail label "${value}" is already used by another column. Each Gmail label can only be mapped to one column.`,
         );
         return;
       }
@@ -277,19 +278,19 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
           if (field === "gmailLabel" || field === "title") {
             const newGmailLabel =
               field === "gmailLabel" ? value : col.gmailLabel;
-            const newTitle = field === "title" ? (value || col.title) : col.title;
+            const newTitle = field === "title" ? value || col.title : col.title;
             updatedCol.status = generateUniqueStatus(
               newGmailLabel,
               newTitle,
               columns,
-              col.id
+              col.id,
             );
           }
 
           return updatedCol;
         }
         return col;
-      })
+      }),
     );
   };
 
@@ -390,7 +391,7 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
                             handleUpdateColumn(
                               column.id,
                               "title",
-                              e.target.value
+                              e.target.value,
                             )
                           }
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -409,14 +410,17 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
                               handleUpdateColumn(
                                 column.id,
                                 "color",
-                                e.target.value
+                                e.target.value,
                               )
                             }
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                           >
                             {AVAILABLE_COLORS.map((color) => (
                               <option key={color} value={color}>
-                                {color.replace("bg-", "").replace("-500", "").replace(/^\w/, c => c.toUpperCase())}
+                                {color
+                                  .replace("bg-", "")
+                                  .replace("-500", "")
+                                  .replace(/^\w/, (c) => c.toUpperCase())}
                               </option>
                             ))}
                           </select>
@@ -438,7 +442,7 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
                               handleUpdateColumn(
                                 column.id,
                                 "icon",
-                                e.target.value
+                                e.target.value,
                               )
                             }
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
@@ -450,7 +454,9 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
                             ))}
                           </select>
 
-                          <div className={`h-9 w-9 rounded ${column.color} border flex items-center justify-center flex-shrink-0`}>
+                          <div
+                            className={`h-9 w-9 rounded ${column.color} border flex items-center justify-center flex-shrink-0`}
+                          >
                             {ICON_COMPONENTS[column.icon] || (
                               <div className="text-gray-400 text-xs">?</div>
                             )}
@@ -469,7 +475,7 @@ const KanbanSettings: React.FC<KanbanSettingsProps> = ({
                             handleUpdateColumn(
                               column.id,
                               "gmailLabel",
-                              e.target.value || undefined
+                              e.target.value || undefined,
                             )
                           }
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"

@@ -10,17 +10,15 @@ class AISummarizationService {
     if (apiKey) {
       this.genAI = new GoogleGenerativeAI(apiKey);
       this.model = this.genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash-lite",
         generationConfig: {
           temperature: 0.5,
           maxOutputTokens: 300,
         },
       });
-      console.log("✓ Gemini AI initialized with API key");
     } else {
       this.genAI = null;
       this.model = null;
-      console.log("✗ Gemini API key not configured");
     }
   }
 
@@ -53,9 +51,7 @@ ${emailBody}
 Please provide a concise summary of this email.`;
 
       // Use Google Generative AI SDK
-      console.log(
-        `Calling Gemini AI for email: ${subject.substring(0, 50)}...`
-      );
+
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
       const summary = response.text().trim();
@@ -65,7 +61,6 @@ Please provide a concise summary of this email.`;
         return this.generateSimpleSummary(emailBody);
       }
 
-      console.log(`✓ Summary generated: ${summary.substring(0, 50)}...`);
       return summary;
     } catch (error: any) {
       console.error("Gemini AI Summarization error:", {
@@ -108,10 +103,10 @@ Please provide a concise summary of this email.`;
    * @returns Array of summaries in the same order
    */
   async batchSummarize(
-    emails: Array<{ body: string; subject: string }>
+    emails: Array<{ body: string; subject: string }>,
   ): Promise<string[]> {
     const summaries = await Promise.all(
-      emails.map((email) => this.generateSummary(email.body, email.subject))
+      emails.map((email) => this.generateSummary(email.body, email.subject)),
     );
     return summaries;
   }
