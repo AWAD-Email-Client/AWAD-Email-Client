@@ -46,7 +46,7 @@ const setAuthCookie = (res: Response, userId: string): void => {
   res.cookie(COOKIE_NAME, userId, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     maxAge: COOKIE_MAX_AGE,
   });
 };
