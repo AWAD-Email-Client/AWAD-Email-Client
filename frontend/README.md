@@ -51,7 +51,3 @@ VITE_GOOGLE_CLIENT_ID=your_google_client_id
 ## ��� Deploy
 
 See main project README for deployment instructions.
-
-
-
-
