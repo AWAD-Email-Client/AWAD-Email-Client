@@ -29,11 +29,11 @@ const ComposeEmail: React.FC<ComposeEmailProps> = ({
   const [error, setError] = useState("");
 
   // Helper function to strip HTML tags
-  const stripHtml = (html: string): string => {
-    const tmp = document.createElement("DIV");
-    tmp.innerHTML = DOMPurify.sanitize(html);
-    return tmp.textContent || tmp.innerText || "";
-  };
+  // const stripHtml = (html: string): string => {
+  //   const tmp = document.createElement("DIV");
+  //   tmp.innerHTML = DOMPurify.sanitize(html);
+  //   return tmp.textContent || tmp.innerText || "";
+  // };
 
   // Helper function to convert plain text to HTML
   const textToHtml = (text: string): string => {
