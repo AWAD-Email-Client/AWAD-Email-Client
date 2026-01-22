@@ -7,11 +7,18 @@ pipeline {
         ECR_REPO_BACKEND = 'awad-backend'
         EC2_INSTANCE_TAG = 'awad-prod-instance'
         AWS_SECRET_ID = 'awad/prod/env'
-    // IMAGE_TAG will be set dynamically
+        // IMAGE_TAG will be set dynamically
+        IS_PR = "${env.CHANGE_ID != null ? 'true' : 'false'}"
+        IS_MAIN_BRANCH = "${env.BRANCH_NAME == 'main' ? 'true' : 'false'}"
     }
     stages {
         stage('Setup') {
             steps {
+                script {
+                    echo "Branch: ${env.BRANCH_NAME}"
+                    echo "Is PR: ${env.IS_PR}"
+                    echo "Is Main Branch: ${env.IS_MAIN_BRANCH}"
+                }
                 sh '''
           export NVM_DIR="$HOME/.nvm"
           [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
@@ -22,6 +29,9 @@ pipeline {
             }
         }
         stage('Detect Changes') {
+            when {
+                expression { return env.IS_MAIN_BRANCH == 'true' }
+            }
             steps {
                 withCredentials([usernamePassword(credentialsId: 'aws-credentials', passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
                     script {
@@ -71,7 +81,13 @@ pipeline {
         stage('Build & Test') {
             parallel {
                 stage('Build Backend') {
-                    when { expression { return env.BACKEND_CHANGED == 'true' } }
+                    when { 
+                        expression { 
+                            // For PR: always build and test
+                            // For main: only if changed
+                            return env.IS_PR == 'true' || env.BACKEND_CHANGED == 'true' 
+                        } 
+                    }
                     steps {
                         dir('backend') {
                             sh 'npm install'
@@ -82,7 +98,13 @@ pipeline {
                 }
 
                 stage('Build Frontend') {
-                    when { expression { return env.FRONTEND_CHANGED == 'true' } }
+                    when { 
+                        expression { 
+                            // For PR: always build and test
+                            // For main: only if changed
+                            return env.IS_PR == 'true' || env.FRONTEND_CHANGED == 'true' 
+                        } 
+                    }
                     steps {
                         dir('frontend') {
                             sh 'npm install'
@@ -95,6 +117,9 @@ pipeline {
         }
 
         stage('Build Docker Images') {
+            when {
+                expression { return env.IS_MAIN_BRANCH == 'true' }
+            }
             steps {
                 script {
                     if (env.BACKEND_CHANGED == 'true') {
@@ -108,6 +133,9 @@ pipeline {
         }
 
         stage('Push to ECR') {
+            when {
+                expression { return env.IS_MAIN_BRANCH == 'true' }
+            }
             steps {
                 withCredentials([usernamePassword(credentialsId: 'aws-credentials', passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
                     script {
@@ -141,6 +169,9 @@ pipeline {
         }
 
         stage('Provision Secrets') {
+            when {
+                expression { return env.IS_MAIN_BRANCH == 'true' }
+            }
             steps {
                 withCredentials([usernamePassword(credentialsId: 'aws-credentials', passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
                     script {
@@ -223,6 +254,9 @@ try {
         }
 
         stage('Deploy to EC2') {
+            when {
+                expression { return env.IS_MAIN_BRANCH == 'true' }
+            }
             steps {
                 withCredentials([usernamePassword(credentialsId: 'aws-credentials', passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
                     sshagent(['ec2-ssh-key']) {
@@ -274,30 +308,34 @@ try {
 
     post {
         success {
-            withCredentials([usernamePassword(credentialsId: 'aws-credentials', passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
-                script {
-                    // Store the successful image tags in SSM Parameter Store for next build
-                    echo "Storing image tags in SSM Parameter Store..."
-                    
-                    sh """
-                        aws ssm put-parameter \
-                            --name /awad/prod/backend/image_tag \
-                            --value ${BACKEND_IMAGE_TAG} \
-                            --type String \
-                            --overwrite \
-                            --region ${AWS_DEFAULT_REGION}
-                    """
-                    
-                    sh """
-                        aws ssm put-parameter \
-                            --name /awad/prod/frontend/image_tag \
-                            --value ${FRONTEND_IMAGE_TAG} \
-                            --type String \
-                            --overwrite \
-                            --region ${AWS_DEFAULT_REGION}
-                    """
-                    
-                    echo "Image tags stored successfully"
+            script {
+                if (env.IS_MAIN_BRANCH == 'true') {
+                    withCredentials([usernamePassword(credentialsId: 'aws-credentials', passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
+                        // Store the successful image tags in SSM Parameter Store for next build
+                        echo "Storing image tags in SSM Parameter Store..."
+                        
+                        sh """
+                            aws ssm put-parameter \
+                                --name /awad/prod/backend/image_tag \
+                                --value ${BACKEND_IMAGE_TAG} \
+                                --type String \
+                                --overwrite \
+                                --region ${AWS_DEFAULT_REGION}
+                        """
+                        
+                        sh """
+                            aws ssm put-parameter \
+                                --name /awad/prod/frontend/image_tag \
+                                --value ${FRONTEND_IMAGE_TAG} \
+                                --type String \
+                                --overwrite \
+                                --region ${AWS_DEFAULT_REGION}
+                        """
+                        
+                        echo "Image tags stored successfully"
+                    }
+                } else {
+                    echo "PR build successful - skipping deployment steps"
                 }
             }
         }
