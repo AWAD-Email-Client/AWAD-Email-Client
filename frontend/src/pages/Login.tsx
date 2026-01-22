@@ -1,15 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { Mail, Lock, AlertCircle, Loader2 } from "lucide-react";
+import { Mail, AlertCircle, Loader2 } from "lucide-react";
 import apiClient from "../api/axios";
-import type { FormEvent } from "react";
 
 const Login: React.FC = () => {
-  const { login, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [searchParams] = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -30,35 +27,6 @@ const Login: React.FC = () => {
   if (isAuthenticated) {
     return <Navigate to="/inbox" replace />;
   }
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-
-    // Validation
-    if (!email || !password) {
-      setError("Please fill in all fields");
-      setLoading(false);
-      return;
-    }
-
-    if (!/\S+@\S+\.\S+/.test(email)) {
-      setError("Please enter a valid email address");
-      setLoading(false);
-      return;
-    }
-
-    try {
-      await login({ email, password });
-    } catch (err: unknown) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Login failed. Please try again.";
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Handle OAuth2 Authorization Code Flow
   const handleGmailOAuthClick = async () => {
